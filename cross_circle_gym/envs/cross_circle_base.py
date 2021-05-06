@@ -340,8 +340,8 @@ class CrossCircleBase(gym.Env):
             self.clock = pygame.time.Clock()
             #self.viewer = plt.imshow(self.combined_state)
 
-
-        squeezed_combined_state = resize(np.squeeze(self.combined_state, axis = 2), (350, 350), mode='edge', preserve_range=True)*255
+        comb_state = self.combined_state
+        squeezed_combined_state = resize(np.squeeze(comb_state, axis = 2), (350, 350), mode='edge', preserve_range=True)*255
         #print(squeezed_combined_state.shape)
         #print(squeezed_combined_state.max())
 

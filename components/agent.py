@@ -22,54 +22,66 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 SOURCE: https://github.com/keon/deep-q-learning/blob/master/ddqn.py
+
+
 '''
 import pickle
 import random
 from collections import deque
 
 import numpy as np
-from keras import backend as K
-from keras.layers import Dense
-from keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D, Flatten
-from keras.models import Model
-from keras.models import Sequential
-from keras.optimizers import Adam
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Input, Dense, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import Model
+from tensorflow.keras.losses import MeanSquaredError
 
 
-class DDQNAgent:
-    def __init__(self, state_dim, action_size):
+class DQNAgent:
+    def __init__(self, state_dim, action_size, memory_size = 10000, 
+        gamma = 0.99, init_epsilon = 1.0, final_epsilon = 0.1, epsilon_decay = 0.999,
+        lr = 0.00025, update_frequency = 4, batch_size = 32, C = 10_000):
         self.state_dim = state_dim
         self.action_size = action_size
-        self.memory = deque(maxlen=10000)
-        self.gamma = 0.95    # discount rate
-        self.epsilon = 1.0  # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.99
-        self.learning_rate = 0.001
+        self.memory = deque(maxlen=memory_size)
+        self.gamma = gamma    # discount rate
+        self.epsilon = init_epsilon  # exploration rate
+        self.epsilon_min = final_epsilon
+        self.epsilon_decay = epsilon_decay #0.99998
+        self.learning_rate = lr
+        self.update_frequency = update_frequency
         self.model = self._build_model()
         self.target_model = self._build_model()
         self.update_target_model()
         self.step = 0
-        self.C = 10_000
-        self.batch_size = 32
+        self.C = C
+        self.batch_size = batch_size
+        self.loss_function = MeanSquaredError()
+        self.optimizer = Adam(learning_rate=0.00025, clipnorm=1.0)
 
-    def _huber_loss(self, target, prediction):
-        # sqrt(1+error^2)-1
-        error = prediction - target
-        return K.mean(K.sqrt(1+K.square(error))-1, axis=-1)
+        print(self.model.summary())
+
 
     def _build_model(self):
         # Neural Net for Deep-Q learning Model
-        input_img = Input(shape = self.state_dim)
-        conv2d = Conv2D(16, (5,5), activation = 'relu')(input_img)
-        max_pool = MaxPooling2D((2,2))(conv2d)
+        state_input = Input(shape = self.state_dim)
+
+        conv1 = Conv2D(8, (5,5), activation = 'relu')(state_input)
+        conv2 = Conv2D(8 , (3,3), activation = 'relu') (conv2)
+        max_pool = MaxPooling2D((2,2))(conv2)
         flatten = Flatten()(max_pool)
         dense1 = Dense(32, activation = 'relu')(flatten)
-        output = Dense(self.action_size, activation='linear')(dense1)
+        """
+        dense2 = Dense(128 , activation = 'relu')(state_input)
+        dense3 = Dense(128, activation = 'relu')(dense2)
+        dense4 = Dense(128, activation = 'relu')(dense3)        
+        """
+        action_output = Dense(self.action_size, activation='linear')(dense1)
 
-        model = Model(input_img, output)
-        model.compile(loss=self._huber_loss,
-                      optimizer=Adam(lr=self.learning_rate))
+        model = Model(inputs = state_input, outputs = action_output)
+
         return model
 
     def update_target_model(self):
@@ -79,38 +91,66 @@ class DDQNAgent:
     def remember(self, state, action, reward, next_state, done):
         self.memory.append((state, action, reward, next_state, done))
 
-    def act(self, state,random=True):
-        if random:
+    def act(self, state,random_act=True):
+
+        if random_act:
             if np.random.rand() <= self.epsilon:
                 return random.randrange(self.action_size)
-            act_values = self.model.predict(state)
+
+            act_values = self.model.predict(np.array([state]))
         else:
-            act_values = self.model.predict(state)
+            act_values = self.model.predict(np.array([state]))
         return np.argmax(act_values[0])  # returns action
 
     def replay(self, batch_size):
+
         minibatch = random.sample(self.memory, batch_size)
-        for state, action, reward, next_state, done in minibatch:
-            target = self.model.predict(state)
-            if done:
-                target[0][action] = reward
-            else:
-                a = self.model.predict(next_state)[0]
-                t = self.target_model.predict(next_state)[0]
-                target[0][action] = reward + self.gamma * t[np.argmax(a)]
-            self.model.fit(state, target, epochs=1, verbose=0)
+
+        states, rewards, next_states, actions, dones = [], [], [], [], []
+
+        for s, a, r, ns, d in minibatch:
+
+            states.append(s)
+            actions.append(a)
+            rewards.append(r)
+            next_states.append(ns)
+            dones.append(int(d))
+
+        states, next_states = np.array(states), np.array(next_states)
+        rewards = np.array(rewards)
+        dones = np.array(dones)
+        future_rewards = self.target_model.predict(next_states)
+
+        updated_q_values = rewards + (1-dones) * (self.gamma* np.max(future_rewards, axis = 1))
+
+        action_masks = tf.one_hot(actions, self.action_size)
+
+        with tf.GradientTape() as tape:
+            q_values = self.model(states)
+
+            q_action = tf.reduce_sum(tf.multiply(q_values, action_masks), axis=1)
+
+            loss = self.loss_function(updated_q_values, q_action)
+
+
+        grads = tape.gradient(loss, self.model.trainable_variables)
+        self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+
         if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay
 
     def update(self, state, action, reward, next_state, done):
 
-        self.remember(state, action, reward, next_state, done)
-        self.replay(self.batch_size)
-        self.step +=1
 
+        self.remember(state, action, reward, next_state, done)
+        
+        if len(self.memory) > self.batch_size and self.step % self.update_frequency==0:
+            self.replay(self.batch_size)
+        
+        self.step +=1
+        
         if self.step%self.C == 0:
             self.update_target_model()
-
 
 
     def load(self, name):
