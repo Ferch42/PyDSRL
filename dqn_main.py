@@ -94,7 +94,7 @@ else:
     raise NotImplementedError('Log-level not implemented')
 args.logger = logger
 
-autoencoder,env = prepare_training(args)
+_ ,env = prepare_training(args)
 
 #state_builder = StateRepresentationBuilder(neighbor_radius=args.neighborhood_size)
 action_size = env.action_space.n
@@ -154,7 +154,7 @@ for e in tqdm.tqdm(range(args.episodes)):
                         
                     total_reward += reward
                     #next_state = state_builder.build_state(*autoencoder.get_entities(next_image))
-                    state = next_state
+                    state = next_image
                     image = next_image
                 evaluation_reward.append(total_reward)
 

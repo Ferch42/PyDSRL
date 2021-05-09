@@ -28,7 +28,10 @@ SOURCE: https://github.com/keon/deep-q-learning/blob/master/ddqn.py
 import pickle
 import random
 from collections import deque
+import sys
+import gc
 
+from scipy import sparse
 import numpy as np
 
 import tensorflow as tf
@@ -40,8 +43,8 @@ from tensorflow.keras.losses import MeanSquaredError
 
 
 class DQNAgent:
-    def __init__(self, state_dim, action_size, memory_size = 10000, 
-        gamma = 0.99, init_epsilon = 1.0, final_epsilon = 0.1, epsilon_decay = 0.999,
+    def __init__(self, state_dim, action_size, memory_size = 1_000, 
+        gamma = 0.99, init_epsilon = 1.5, final_epsilon = 0.1, epsilon_decay = 0.99999,
         lr = 0.00025, update_frequency = 4, batch_size = 32, C = 10_000):
         self.state_dim = state_dim
         self.action_size = action_size
@@ -60,6 +63,7 @@ class DQNAgent:
         self.batch_size = batch_size
         self.loss_function = MeanSquaredError()
         self.optimizer = Adam(learning_rate=0.00025, clipnorm=1.0)
+        self.states_table = dict()
 
         print(self.model.summary())
 
@@ -69,7 +73,7 @@ class DQNAgent:
         state_input = Input(shape = self.state_dim)
 
         conv1 = Conv2D(8, (5,5), activation = 'relu')(state_input)
-        conv2 = Conv2D(8 , (3,3), activation = 'relu') (conv2)
+        conv2 = Conv2D(8 , (3,3), activation = 'relu') (conv1)
         max_pool = MaxPooling2D((2,2))(conv2)
         flatten = Flatten()(max_pool)
         dense1 = Dense(32, activation = 'relu')(flatten)
@@ -88,7 +92,9 @@ class DQNAgent:
         # copy weights from model to target_model
         self.target_model.set_weights(self.model.get_weights())
 
+
     def remember(self, state, action, reward, next_state, done):
+
         self.memory.append((state, action, reward, next_state, done))
 
     def act(self, state,random_act=True):
@@ -101,6 +107,7 @@ class DQNAgent:
         else:
             act_values = self.model.predict(np.array([state]))
         return np.argmax(act_values[0])  # returns action
+
 
     def replay(self, batch_size):
 
@@ -135,9 +142,7 @@ class DQNAgent:
 
         grads = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
-
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
+        gc.collect()
 
     def update(self, state, action, reward, next_state, done):
 
@@ -146,9 +151,12 @@ class DQNAgent:
         
         if len(self.memory) > self.batch_size and self.step % self.update_frequency==0:
             self.replay(self.batch_size)
-        
+  
         self.step +=1
-        
+
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
         if self.step%self.C == 0:
             self.update_target_model()
 
