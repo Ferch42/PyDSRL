@@ -44,7 +44,10 @@ class SymbolicAgent:
 		self.type_transition_matrix = {}
 		self.tracked_entities = []
 		self.entity_types = [EntityType(np.full(self.number_of_convolutions , np.inf), 0)] # Initializes with null-type
-		self.interactions_Q_fucntions = {}
+		self.interactions_Q_functions = {}
+
+		# epsilon greedy
+		self.epsilon = 0.1
 
 	def build_autoencoder(self):
 		"""
@@ -73,9 +76,22 @@ class SymbolicAgent:
 
 		interactions = self.build_state_representation(state)
 
+		Q_values = np.zeros(self.action_size)
 		for i in interactions:
+			Q_values += self.get_q_value_function(i)
 
-			
+		if random_act:
+			if np.random.random() < self.epsilon:
+				return np.random.choice(range(self.action_size))
+		return np.argmax(Q_values)
+
+	def get_q_value_function(self, interaction):
+
+		if interaction not in self.interactions_Q_functions.keys():
+
+			self.interactions_Q_functions[interaction] = np.zeros(self.action_size)
+
+		return self.interactions_Q_functions[interaction]
 
 
 	def build_state_representation(self, state: np.array):
