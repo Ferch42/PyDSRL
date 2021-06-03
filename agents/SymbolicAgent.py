@@ -31,6 +31,9 @@ class SymbolicAgent:
 		self.state_dim = state_dim
 		self.action_size  = action_size
 
+		# RL
+		self.gamma = 0.99
+
 		# Autoencoder
 		self.number_of_convolutions = 8
 		self.build_autoencoder()
@@ -49,7 +52,7 @@ class SymbolicAgent:
 		
 		## max distances
 		self.neighboor_max_distance = 10
-		self.interaction_max_distance = 10
+		self.interaction_max_distance = 3
 		
 		self.type_transition_matrix = {}
 		self.tracked_entities = []
@@ -112,7 +115,14 @@ class SymbolicAgent:
 
 		return self.interactions_Q_functions[interaction_key]
 
-	
+	def update_q_value_function(self, i:Interaction, q_value: np.array):
+
+		interaction_key = (i.tee1.entity_after.entity_type.type_number, \
+							i.tee2.entity_after.entity_type.type_number, \
+							i.x_dist, i.y_dist)
+
+		self.interactions_Q_functions[interaction_key] = q_value
+
 	def get_state_representation(self, state):
 		
 		state_string = str(state)
@@ -166,10 +176,13 @@ class SymbolicAgent:
 		self.tracked_entities = detected_entities
 
 		interactions = []
-		for i,tee1 in enumerate(temporally_extended_entities):
-			for j,tee2 in enumerate(temporally_extended_entities):
-				if i!=j: # if not same entity checks for interaction
-					interactions += self.get_interactions(tee1, tee2)
+		n_tee = len(temporally_extended_entities)
+
+		for i in range(n_tee-1):
+			for j in range(i+1, n_tee):
+				tee1 = temporally_extended_entities[i]
+				tee2 = temporally_extended_entities[j]
+				interactions += self.get_interactions(tee1, tee2)
 
 		return interactions
 
@@ -191,8 +204,34 @@ class SymbolicAgent:
 		interactions_before = self.get_state_representation(state)
 		interactions_after = self.get_state_representation(next_state)
 
+		print(len(interactions_before))
+		interactions_after_dict = self.build_interactions_after_dict(interactions_after)
 
-	def find_corresponding_interaction(self, i: Interaction, ia: [Interaction]):
+		for ib in interactions_before:
+
+			ia = self.find_corresponding_interaction(ib, interactions_after_dict)
+
+			Q_ib = self.get_q_value_function(ib).copy()
+			Q_ia = self.get_q_value_function(ia).copy()
+
+			Q_ib[action] = reward + self.gamma * Q_ia.max() - Q_ib[action]
+
+			self.update_q_value_function(ib, Q_ib)
+
+	def build_interactions_after_dict(self, interactions_after):
+
+		interactions_after_dict = {}
+
+		for ia in interactions_after:
+			interaction_after_fingerprint = (ia.tee1.entity_before.entity_type.type_number, \
+				ia.tee1.entity_before.position[0], ia.tee1.entity_before.position[1],\
+				ia.tee2.entity_before.entity_type.type_number,\
+				ia.tee2.entity_before.position[0], ia.tee2.entity_before.position[1])
+			interactions_after_dict[interaction_after_fingerprint] = ia
+
+		return interactions_after_dict
+
+	def find_corresponding_interaction(self, i: Interaction, iad: dict):
 
 		# Entity fingerprint after
 		interaction_before_fingerprint = (i.tee1.entity_after.entity_type.type_number, \
@@ -204,7 +243,7 @@ class SymbolicAgent:
 
 		for ii in ia:
 			# Possible interaction fingerprint
-			interaction_after_fingerprint = (ii.tee1.entity_before.type_number, \
+			interaction_after_fingerprint = (ii.tee1.entity_before.entity_type.type_number, \
 				ii.tee1.entity_before.position[0], ii.tee1.entity_before.position[1],\
 				ii.tee2.entity_before.entity_type.type_number,\
 				ii.tee2.entity_before.position[0], ii.tee2.entity_before.position[1])
@@ -319,5 +358,7 @@ class SymbolicAgent:
 
 		return detected_entities
 
+	def reset(self):
+		self.states_dict = {}
 
 
