@@ -33,6 +33,7 @@ class SymbolicAgent:
 
 		# RL
 		self.gamma = 0.99
+		self.lr = 0.1
 
 		# Autoencoder
 		self.number_of_convolutions = 8
@@ -61,7 +62,7 @@ class SymbolicAgent:
 		self.states_dict = {}
 
 		# epsilon greedy
-		self.epsilon = 0.1
+		self.epsilon = 1
 
 	def build_autoencoder(self):
 		"""
@@ -97,10 +98,11 @@ class SymbolicAgent:
 		if random_act:
 			if np.random.random() < self.epsilon:
 				return np.random.choice(range(self.action_size))
-
+		print(Q_values)
 		Q_max = Q_values.max()
 		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
 		
+		self.epsilon = max(0.1, self.epsilon*0.9993)
 		return np.random.choice(Q_max_indexes)
 
 	def get_q_value_function(self, i: Interaction):
@@ -208,7 +210,7 @@ class SymbolicAgent:
 			Q_ib = self.get_q_value_function(ib).copy()
 			Q_ia = self.get_q_value_function(ia).copy()
 
-			Q_ib[action] = reward + self.gamma * Q_ia.max() - Q_ib[action]
+			Q_ib[action] = Q_ib[action] + self.lr* (reward + self.gamma * Q_ia.max()*(1-int(done)) - Q_ib[action])
 
 			self.update_q_value_function(ib, Q_ib)
 
@@ -341,6 +343,7 @@ class SymbolicAgent:
 
 	def reset(self):
 		self.states_dict = {}
+		self.tracked_entities = []
 
 	def save(self, path):
 		pass
