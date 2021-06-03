@@ -165,11 +165,6 @@ class SymbolicAgent:
 			# Update type transition matrix
 			self.update_type_transition_matrix(te.entity_type, most_likely_entity.entity_type)
 			
-			if te.entity_type.type_number != most_likely_entity.entity_type.type_number:
-				print("NOT EQUAL ENTITY TYPES")
-				print('types before', te.entity_type.type_number)
-				print('types after', most_likely_entity.entity_type.type_number)
-			
 			temporally_extended_entities.append(TimeExtendedEntity(te, most_likely_entity))
 
 		# Updates the tracked entities to be the entites most recently detected
@@ -204,7 +199,6 @@ class SymbolicAgent:
 		interactions_before = self.get_state_representation(state)
 		interactions_after = self.get_state_representation(next_state)
 
-		print(len(interactions_before))
 		interactions_after_dict = self.build_interactions_after_dict(interactions_after)
 
 		for ib in interactions_before:
@@ -239,20 +233,7 @@ class SymbolicAgent:
 			i.tee2.entity_after.entity_type.type_number,\
 			i.tee2.entity_after.position[0], i.tee2.entity_after.position[1])
 
-		possible_interactions = []
-
-		for ii in ia:
-			# Possible interaction fingerprint
-			interaction_after_fingerprint = (ii.tee1.entity_before.entity_type.type_number, \
-				ii.tee1.entity_before.position[0], ii.tee1.entity_before.position[1],\
-				ii.tee2.entity_before.entity_type.type_number,\
-				ii.tee2.entity_before.position[0], ii.tee2.entity_before.position[1])
-
-			if interaction_before_fingerprint == interaction_after_fingerprint:
-				possible_interactions.append(ii)
-
-		assert(len(possible_interactions)==1)
-		return possible_interactions.pop()
+		return iad[interaction_before_fingerprint]
 
 	def same_entities_likelihoods(self, entity: Entity, detected_entities : [Entity]):
 
@@ -361,4 +342,6 @@ class SymbolicAgent:
 	def reset(self):
 		self.states_dict = {}
 
+	def save(self, path):
+		pass
 
