@@ -19,6 +19,8 @@ EntityType = namedtuple('EntityType', ['activation_spectra', 'type_number'])
 EntitySketch = namedtuple('EntitySketch',['position', 'entity_type'])
 Entity = namedtuple('Entity', ['position', 'entity_type', 'number_of_neighboors'])
 TimeExtendedEntity = namedtuple('TimeExtendedEntity', ['entity_before', 'entity_after'])
+Interaction = namedtuple('Interaction', ['tee1', 'tee2', 'x_dist', 'y_dist'])
+
 # Auxiliary_functions
 euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
 
@@ -53,6 +55,7 @@ class SymbolicAgent:
 		self.tracked_entities = []
 		self.entity_types = [EntityType(np.full(self.number_of_convolutions , np.inf), 0)] # Initializes with null-type
 		self.interactions_Q_functions = {}
+		self.states_dict = {}
 
 		# epsilon greedy
 		self.epsilon = 0.1
@@ -82,8 +85,8 @@ class SymbolicAgent:
 
 	def act(self, state, random_act = True):
 
-		interactions = self.build_state_representation(state)
-		"""
+		interactions = self.get_state_representation(state)
+
 		Q_values = np.zeros(self.action_size)
 		for i in interactions:
 			Q_values += self.get_q_value_function(i)
@@ -91,19 +94,34 @@ class SymbolicAgent:
 		if random_act:
 			if np.random.random() < self.epsilon:
 				return np.random.choice(range(self.action_size))
-		"""
-		return np.random.choice(range(self.action_size))
 
-	def get_q_value_function(self, interaction):
+		Q_max = Q_values.max()
+		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
+		
+		return np.random.choice(Q_max_indexes)
 
-		if interaction not in self.interactions_Q_functions.keys():
+	def get_q_value_function(self, i: Interaction):
 
-			self.interactions_Q_functions[interaction] = np.zeros(self.action_size)
+		interaction_key = (i.tee1.entity_after.entity_type.type_number, \
+							i.tee2.entity_after.entity_type.type_number, \
+							i.x_dist, i.y_dist)
 
-		return self.interactions_Q_functions[interaction]
+		if interaction_key not in self.interactions_Q_functions.keys():
 
+			self.interactions_Q_functions[interaction_key] = np.zeros(self.action_size)
 
-	def build_state_representation(self, state: np.array):
+		return self.interactions_Q_functions[interaction_key]
+
+	
+	def get_state_representation(self, state):
+		
+		state_string = str(state)
+		if state_string not in self.states_dict.keys():
+			self.states_dict[state_string] = self.build_state_representation(state)
+
+		return self.states_dict[state_string]
+
+	def build_state_representation(self, state):
 		"""
 		Builds the state representation
 
@@ -147,11 +165,55 @@ class SymbolicAgent:
 		# Updates the tracked entities to be the entites most recently detected
 		self.tracked_entities = detected_entities
 
+		interactions = []
+		for i,tee1 in enumerate(temporally_extended_entities):
+			for j,tee2 in enumerate(temporally_extended_entities):
+				if i!=j: # if not same entity checks for interaction
+					interactions += self.get_interactions(tee1, tee2)
+
+		return interactions
+
+	def get_interactions(self, tee1: TimeExtendedEntity, tee2: TimeExtendedEntity):
+
+		# check for spatial proximity (if the final distance between them is bellow a certain
+		# distance threshold)
+		if euclidean(tee1.entity_after.position, tee2.entity_after.position) < self.interaction_max_distance:
+			# There is an interaction between the two entitites
+			stee1, stee2 = sorted([tee1, tee2], key = lambda t: t.entity_after.entity_type.type_number)
+			x_dist, y_dist = stee1.entity_after.position - stee2.entity_after.position
+			return [Interaction(stee1, stee2, x_dist, y_dist)]
+		else:
+			return []
 		
-		#return interactions
 
 	def update(self, state, action, reward, next_state, done):
-		pass
+
+		interactions_before = self.get_state_representation(state)
+		interactions_after = self.get_state_representation(next_state)
+
+
+	def find_corresponding_interaction(self, i: Interaction, ia: [Interaction]):
+
+		# Entity fingerprint after
+		interaction_before_fingerprint = (i.tee1.entity_after.entity_type.type_number, \
+			i.tee1.entity_after.position[0], i.tee1.entity_after.position[1],\
+			i.tee2.entity_after.entity_type.type_number,\
+			i.tee2.entity_after.position[0], i.tee2.entity_after.position[1])
+
+		possible_interactions = []
+
+		for ii in ia:
+			# Possible interaction fingerprint
+			interaction_after_fingerprint = (ii.tee1.entity_before.type_number, \
+				ii.tee1.entity_before.position[0], ii.tee1.entity_before.position[1],\
+				ii.tee2.entity_before.entity_type.type_number,\
+				ii.tee2.entity_before.position[0], ii.tee2.entity_before.position[1])
+
+			if interaction_before_fingerprint == interaction_after_fingerprint:
+				possible_interactions.append(ii)
+
+		assert(len(possible_interactions)==1)
+		return possible_interactions.pop()
 
 	def same_entities_likelihoods(self, entity: Entity, detected_entities : [Entity]):
 

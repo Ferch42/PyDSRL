@@ -162,3 +162,6 @@ class DQNAgent:
 
     def save(self, name):
         self.model.save_weights(name)
+
+    def reset(self):
+        pass
