@@ -1,6 +1,6 @@
 import random
-
-from scipy.spatial.distance import euclidean
+from collections import namedtuple
+#from scipy.spatial.distance import euclidean
 
 import numpy as np
 
@@ -13,6 +13,14 @@ from tensorflow.keras.losses import MeanSquaredError
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import pairwise
+
+# namedtuple definitions
+EntityType = namedtuple('EntityType', ['activation_spectra', 'type_number'])
+EntitySketch = namedtuple('EntitySketch',['position', 'entity_type'])
+Entity = namedtuple('Entity', ['position', 'entity_type', 'number_of_neighboors'])
+TimeExtendedEntity = namedtuple('TimeExtendedEntity', ['entity_before', 'entity_after'])
+# Auxiliary_functions
+euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
 
 class SymbolicAgent:
 
@@ -69,13 +77,13 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation=validation_data, verbose = 1, epochs=10 , batch_size = 64)
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=10 , batch_size = 64)
 
 
-	def act(self, state, random_act = True);
+	def act(self, state, random_act = True):
 
 		interactions = self.build_state_representation(state)
-
+		"""
 		Q_values = np.zeros(self.action_size)
 		for i in interactions:
 			Q_values += self.get_q_value_function(i)
@@ -83,7 +91,8 @@ class SymbolicAgent:
 		if random_act:
 			if np.random.random() < self.epsilon:
 				return np.random.choice(range(self.action_size))
-		return np.argmax(Q_values)
+		"""
+		return np.random.choice(range(self.action_size))
 
 	def get_q_value_function(self, interaction):
 
@@ -127,51 +136,22 @@ class SymbolicAgent:
 
 			# Update type transition matrix
 			self.update_type_transition_matrix(te.entity_type, most_likely_entity.entity_type)
-
+			
+			if te.entity_type.type_number != most_likely_entity.entity_type.type_number:
+				print("NOT EQUAL ENTITY TYPES")
+				print('types before', te.entity_type.type_number)
+				print('types after', most_likely_entity.entity_type.type_number)
+			
 			temporally_extended_entities.append(TimeExtendedEntity(te, most_likely_entity))
 
 		# Updates the tracked entities to be the entites most recently detected
 		self.tracked_entities = detected_entities
 
-		interactions = []
-		for tee in temporally_extended_entities:
-
-			for tee2 in temporally_extended_entities:
-				
-				if tee!=tee2:
-				# If both temporally extended entities are not equal check for interaction
-				if euclidean(tee1.entity_before.position, tee2.entity_before.position) < self.interaction_max_distance and euclidean(tee1.entity_after.position, tee2.entity_after.position) < self.interaction_max_distance:
-					if tee1.entity_before.entity_type.type_number == tee1.entity_after.entity_type.type_number and tee2.entity_before.entity_type.type_number == tee2.entity_after.entity_type.type_number:
-						interactions.append(self.get_type_time_consistent_interaction(tee1, tee2))
-
-		return interactions
-
-	def get_interaction(self, tee1: TimeExtendedEntity, tee2 : TimeExtendedEntity):
-		# Interaction within interaction radius
-
-		types_before = [tee1.entity_before.entity_type, tee2.entity_before.entity_type]
-		types_after = [tee1.entity_after.entity_type, tee2.entity_after.entity_type]
-		# Defined as changes in relative distance between objects i.e. tee1.position
-		distance_before = tee1.entity_before.position - tee2.entity_after.position
-		distance_after = tee1.entity_after.position - tee2.entity_after.position
-		loc_diff = distance_after - distance_before
-
-		return Interaction(types_before, types_after, loc_diff)
-
-	def get_type_time_consistent_interaction(self, tee1: TimeExtendedEntity, tee2 : TimeExtendedEntity):
-		# Interaction where the enitities types before and after remain the same
-
-		assert(tee1.entity_before.entity_type.type_number == tee1.entity_after.entity_type.type_number)
-		assert(tee2.entity_before.entity_type.type_number == tee2.entity_after.entity_type.type_number)
-
-		entity_types = sorted([tee1.entity_before.entity_type, tee2.entity_before.entity_type], key = lambda t: t.type_number)
 		
-		# Defined as changes in relative distance between objects i.e. tee1.position
-		distance_before = tee1.entity_before.position - tee2.entity_after.position
-		distance_after = tee1.entity_after.position - tee2.entity_after.position
-		loc_diff = distance_after - distance_before
+		#return interactions
 
-		return TypeTimeConsistentInteraction(entity_types, loc_diff)
+	def update(self, state, action, reward, next_state, done):
+		pass
 
 	def same_entities_likelihoods(self, entity: Entity, detected_entities : [Entity]):
 
@@ -186,7 +166,10 @@ class SymbolicAgent:
 
 			neighboors_difference = (1/ (1 + abs(entity.number_of_neighboors - de.number_of_neighboors)))
 
-			entity_likelihood = (self.spatial_proximity_weight*spatial_proximity + self.type_transition_weight *type_transition_probability + self.neighboor_weight * neighboors_difference)/ (self.spatial_proximity_weight + self.type_transition_weight + self.neighboor_weight)
+			entity_likelihood = (self.spatial_proximity_weight*spatial_proximity + \
+			 self.type_transition_weight *type_transition_probability + \
+			 self.neighboor_weight * neighboors_difference)/ \
+			(self.spatial_proximity_weight + self.type_transition_weight + self.neighboor_weight)
 
 			entities_likelihood.append(entity_likelihood)
 
@@ -194,27 +177,32 @@ class SymbolicAgent:
 
 	def get_type_transition_probability(self, type1: EntityType, type2: EntityType):
 
+		type1_number = type1.type_number
+		type2_number = type2.type_number
 
-		if type1 not in self.type_transition_matrix:
+		if type1_number not in self.type_transition_matrix:
 
-			self.type_transition_matrix[type1] = {
-				type1: 1, # Counts the number of times that type1 has transitioned to type1
-				n:1,      # Counts the number of type transitions starting from type1
+			self.type_transition_matrix[type1_number] = {
+				type1_number: 1, # Counts the number of times that type1 has transitioned to type1
+				'n':1,      # Counts the number of type transitions starting from type1
 				}
 
-		total_number_of_transitions = self.type_transition_matrix[type1][n]
-		type2_count_number = self.type_transition_matrix[type1].get(type2, 0) # Gets the type2 count or returns 0 as default
+		total_number_of_transitions = self.type_transition_matrix[type1_number]['n']
+		type2_count_number = self.type_transition_matrix[type1_number].get(type2_number, 0) # Gets the type2 count or returns 0 as default
 
 		return type2_count_number/total_number_of_transitions
 
 	def update_type_transition_matrix(self, type1: EntityType, type2: EntityType):
-
-		if type2 not in self.type_transition_matrix[type1].keys():
-			self.type_transition_matrix[type1][type2] = 1
-		else:
-			self.type_transition_matrix[type1][type2] += 1
 		
-		self.type_transition_matrix[type1][type2] += 1
+		type1_number = type1.type_number
+		type2_number = type2.type_number
+		
+		if type2_number not in self.type_transition_matrix[type1_number].keys():
+			self.type_transition_matrix[type1_number][type2_number] = 1
+		else:
+			self.type_transition_matrix[type1_number][type2_number] += 1
+		
+		self.type_transition_matrix[type1_number]['n'] += 1
 
 	def extract_entities(self, state: np.array):
 		"""
@@ -229,9 +217,8 @@ class SymbolicAgent:
 		# Predict Encoded latent spaces
 		encoded_filters = self.encoder.predict(np.expand_dims(state, axis = 0))[0]
 
-		self.activation_threshold = (self.activation_threshold + np.mean(encoded_filters))/2
 		highest_activation_features = np.max(encoded_filters, axis = 2)
-
+		self.activation_threshold = (np.percentile(highest_activation_features, 80) +self.activation_threshold)/2
 		sufficient_salient_positions = np.argwhere(highest_activation_features > self.activation_threshold)
 
 		detected_entities_sketches = []
@@ -243,7 +230,7 @@ class SymbolicAgent:
 
 			new_entity_type_flag = True
 			for entity_type in self.entity_types:
-				if entity_type.check_same_type(activation_spectra, self.type_distance_threshold):
+				if euclidean(entity_type.activation_spectra, activation_spectra) < self.type_distance_threshold:
 
 					detected_entities_sketches.append(EntitySketch(position, entity_type))
 					new_entity_type_flag = False
@@ -272,95 +259,3 @@ class SymbolicAgent:
 
 
 
-class Interaction:
-
-	def __init__(self, types_before: [EntityType], types_after: [EntityType], loc_diff: np.array):
-
-		self.types_before = self.ordered_types(types_before)
-		self.types_after = self.ordered_types(types_after)
-		self.loc_diff = loc_diff
-
-	def ordered_types(self, entity_types: [EntityType]):
-
-		return sorted(entity_types, key = lambda t: t.type_number)
-
-
-
-class EntitySketch:
-	"""
-	This class represents only the position and entity type detected. It does not 
-	have the number_of_neighboors attributes 
-	"""
-
-	def __init__(self, position : tuple, entity_type: EntityType):
-
-		self.position = position
-		self.entity_type = entity_type
-
-
-class Entity:
-
-	def __init__(self, position : tuple, entity_type: EntityType, number_of_neighboors: int):
-
-		self.position = position
-		self.entity_type = entity_type
-		self.number_of_neighboors = number_of_neighboors
-
-	def __eq__(self, other):
-
-		if not isinstance(other, Entity):
-			return False
-		
-		return self.position == other.position and self.entity_type == other.entity_type and self.number_of_neighboors = other.number_of_neighboors
-
-
-class EntityType:
-
-	def __init__(self, activation_spectra : np.array, type_number: int):
-
-		self.type_spectra = activation_spectra
-		self.type_number = type_number
-
-
-	def check_same_type(activation_spectra: np.array, type_max_distance: float):
-
-		return euclidean(self.type_spectra, activation_spectra) < type_max_distance
-
-class TimeExtendedEntity:
-	"""
-	This class represents the a entity during two subsequent timesteps
-	"""
-	def __init__(self, entity_before: Entity, entity_after: Entity):
-
-		self.entity_before = entity_before
-		self.entity_after = entity_after
-
-	def __eq__(self, other):
-
-		if not isinstane(other, TimeExtendedEntity):
-			return False
-		return self.entity_before == other.entity_before and self.entity_after == other.entity_after
-
-class TypeTimeConsistentInteraction:
-
-	def __init__(self, entity_types: [EntityType], loc_diff : np.array):
-
-		self.entity_types = entity_types
-		self.loc_diff = loc_diff
-
-	def __hash__(self):
-
-		entity_type1, entity_type2 = self.entity_types
-		unique_interaction_string = str(entity_type1.type_number) + "_" + str(entity_type2.type_number)
-
-		pos_x, pos_y = self.loc_diff
-		unique_interaction_string = unique_interaction_string + str(pos_x) + "_" + str(pos_y)
-		
-		return hash(unique_interaction_string)
-
-	def __eq__(self, other):
-
-		if not isinstance(other, TypeTimeConsistentInteraction):
-			return False
-
-		return self.entity_types[0].type_number == other.entity_types[0].type_number and self.entity_types[1].type_number == other.entity_types[1].type_number and self.loc_diff == other.loc_diff
