@@ -2,6 +2,8 @@ import random
 from collections import namedtuple
 #from scipy.spatial.distance import euclidean
 
+import pygame
+from skimage.transform import resize
 import numpy as np
 
 import tensorflow as tf
@@ -24,6 +26,8 @@ Interaction = namedtuple('Interaction', ['tee1', 'tee2', 'x_dist', 'y_dist'])
 # Auxiliary_functions
 euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
 
+
+np.set_printoptions(threshold=np.inf)
 class SymbolicAgent:
 
 	def __init__(self, state_dim: tuple, action_size: int, pre_training_images: np.array):
@@ -84,9 +88,37 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=10 , batch_size = 64)
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=200, callbacks = [tf.keras.callbacks.EarlyStopping(monitor='val_loss')], batch_size = 64)
+		
+		"""
+		pygame.init()
+		self.viewer = pygame.display.set_mode((350, 350))
+		self.clock = pygame.time.Clock()
 
+		for v in validation_data:
 
+			print('IMAGEM ANTES')
+			squeezed_combined_state = resize(np.squeeze(v, axis = 2), (350, 350), mode='edge', preserve_range=True)*255
+			surf = pygame.surfarray.make_surface(squeezed_combined_state).convert_alpha()
+			pygame.event.poll()
+			self.viewer.blit(surf, (0, 0))
+			self.clock.tick(60)
+			pygame.display.update()
+
+			input()
+			print('IMAGEM DEPOIS')
+
+			p = self.autoencoder.predict(np.array([v]))[0]
+			squeezed_combined_state = resize(np.squeeze(p, axis = 2), (350, 350), mode='edge', preserve_range=True)*255
+			surf = pygame.surfarray.make_surface(squeezed_combined_state).convert_alpha()
+			pygame.event.poll()
+			self.viewer.blit(surf, (0, 0))
+			self.clock.tick(60)
+			pygame.display.update()
+			input()
+
+		pygame.display.quit()
+		"""
 	def act(self, state, random_act = True):
 
 		interactions = self.get_state_representation(state)
@@ -98,11 +130,11 @@ class SymbolicAgent:
 		if random_act:
 			if np.random.random() < self.epsilon:
 				return np.random.choice(range(self.action_size))
-		print(Q_values)
+		#print(Q_values)
 		Q_max = Q_values.max()
 		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
 		
-		self.epsilon = max(0.1, self.epsilon*0.9993)
+		self.epsilon = max(0.1, self.epsilon*0.999)
 		return np.random.choice(Q_max_indexes)
 
 	def get_q_value_function(self, i: Interaction):
@@ -210,7 +242,7 @@ class SymbolicAgent:
 			Q_ib = self.get_q_value_function(ib).copy()
 			Q_ia = self.get_q_value_function(ia).copy()
 
-			Q_ib[action] = Q_ib[action] + self.lr* (reward + self.gamma * Q_ia.max()*(1-int(done)) - Q_ib[action])
+			Q_ib[action] = Q_ib[action] + self.lr* (reward + self.gamma * Q_ia.max() - Q_ib[action])
 
 			self.update_q_value_function(ib, Q_ib)
 
