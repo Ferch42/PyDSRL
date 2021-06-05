@@ -3,7 +3,7 @@ from collections import namedtuple
 #from scipy.spatial.distance import euclidean
 
 import pygame
-from skimage.transform import resize
+from skimage.transform import resize, rescale
 import numpy as np
 
 import tensorflow as tf
@@ -28,6 +28,22 @@ euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
 
 
 np.set_printoptions(threshold=np.inf)
+
+
+def duplicate_matrix(mat):
+
+	mat_i, mat_j = mat.shape
+	dup_mat = np.zeros(shape = (mat_i*2, mat_j*2))
+
+	for i in range(mat_i):
+		for j in range(mat_j):
+			dup_mat[2*i][2*j] = mat[i][j]
+			dup_mat[2*i+1][2*j] = mat[i][j]
+			dup_mat[2*i][2*j+1] = mat[i][j]
+			dup_mat[2*i+1][2*j+1] = mat[i][j]
+
+	return dup_mat
+
 class SymbolicAgent:
 
 	def __init__(self, state_dim: tuple, action_size: int, pre_training_images: np.array):
@@ -35,38 +51,45 @@ class SymbolicAgent:
 		self.state_dim = state_dim
 		self.action_size  = action_size
 
+		# Number of convolutions
+		self.number_of_convolutions = 8
+
 		# RL
 		self.gamma = 0.99
 		self.lr = 0.1
 
-		# Autoencoder
-		self.number_of_convolutions = 8
-		self.build_autoencoder()
-		self.train_autoencoder(pre_training_images)
-
-		# Entity tracking
-		## thresholds
-		self.entity_likelihood_threshold = 0.5
-		self.activation_threshold = 0
-		self.type_distance_threshold = 1
-		
-		## same entity weights
-		self.spatial_proximity_weight = 1
-		self.type_transition_weight = 1
-		self.neighboor_weight = 1
-		
-		## max distances
-		self.neighboor_max_distance = 10
-		self.interaction_max_distance = 3
-		
+		# Auxiliary data structures
 		self.type_transition_matrix = {}
 		self.tracked_entities = []
 		self.entity_types = [EntityType(np.full(self.number_of_convolutions , np.inf), 0)] # Initializes with null-type
 		self.interactions_Q_functions = {}
 		self.states_dict = {}
 
+		# Entity tracking
+		## thresholds
+		self.entity_likelihood_threshold = 0.5
+		self.activation_threshold = 0
+		self.type_distance_threshold = 0.5
+		
+
+		## max distances
+		self.neighboor_max_distance = 10
+		self.interaction_max_distance = 3
+
+
+		## same entity weights
+		self.spatial_proximity_weight = 1
+		self.type_transition_weight = 1
+		self.neighboor_weight = 1
+		
 		# epsilon greedy
 		self.epsilon = 1
+
+		# Autoencoder
+		self.build_autoencoder()
+		self.train_autoencoder(pre_training_images)
+
+		self.viewer = None
 
 	def build_autoencoder(self):
 		"""
@@ -88,7 +111,7 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=200, callbacks = [tf.keras.callbacks.EarlyStopping(monitor='val_loss')], batch_size = 64)
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=100, batch_size = 64)
 		
 		"""
 		pygame.init()
@@ -119,10 +142,51 @@ class SymbolicAgent:
 
 		pygame.display.quit()
 		"""
+
+		# Using the validation data in order to estimate activation threshold
+		thresholds_estimate_list = []
+
+		for v in validation_data:
+			encoded_filters = self.encoder.predict(np.expand_dims(v, axis = 0))[0]
+			highest_activation_features = np.max(encoded_filters, axis = 2)
+			thresholds_estimate_list.append(np.percentile(highest_activation_features, 80))
+
+		self.activation_threshold = np.mean(thresholds_estimate_list)
+
+		"""
+		for v in validation_data:
+
+			self.extract_entities(v)
+			p = self.autoencoder.predict(np.array([v]))[0]
+			print('reconstructed image')
+			self.render_image(p)
+			input()
+		"""
+
+	def render_image(self, state):
+
+
+		#if self.viewer is None:
+		pygame.init()
+		self.viewer = pygame.display.set_mode((350, 350))
+		self.clock = pygame.time.Clock()
+		s = state
+		if len(state.shape)==3:
+			s = duplicate_matrix(duplicate_matrix(np.squeeze(state, axis = 2)))
+		else:
+			s = duplicate_matrix(duplicate_matrix(duplicate_matrix(s)))
+		squeezed_combined_state =  s*255
+		surf = pygame.surfarray.make_surface(squeezed_combined_state).convert_alpha()
+		pygame.event.poll()
+		self.viewer.blit(surf, (0, 0))
+		self.clock.tick(60)
+		pygame.display.update()
+
+
 	def act(self, state, random_act = True):
-
+		
 		interactions = self.get_state_representation(state)
-
+		"""
 		Q_values = np.zeros(self.action_size)
 		for i in interactions:
 			Q_values += self.get_q_value_function(i)
@@ -135,7 +199,8 @@ class SymbolicAgent:
 		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
 		
 		self.epsilon = max(0.1, self.epsilon*0.999)
-		return np.random.choice(Q_max_indexes)
+		"""
+		return np.random.choice(range(self.action_size))
 
 	def get_q_value_function(self, i: Interaction):
 
@@ -229,7 +294,7 @@ class SymbolicAgent:
 		
 
 	def update(self, state, action, reward, next_state, done):
-
+		"""
 		interactions_before = self.get_state_representation(state)
 		interactions_after = self.get_state_representation(next_state)
 
@@ -245,6 +310,8 @@ class SymbolicAgent:
 			Q_ib[action] = Q_ib[action] + self.lr* (reward + self.gamma * Q_ia.max() - Q_ib[action])
 
 			self.update_q_value_function(ib, Q_ib)
+		"""
+		pass
 
 	def build_interactions_after_dict(self, interactions_after):
 
@@ -320,7 +387,7 @@ class SymbolicAgent:
 		
 		self.type_transition_matrix[type1_number]['n'] += 1
 
-	def extract_entities(self, state: np.array):
+	def extract_entities(self, state: np.array, render_extracted = False):
 		"""
 		Extracts the entities and their locations 
 
@@ -334,7 +401,7 @@ class SymbolicAgent:
 		encoded_filters = self.encoder.predict(np.expand_dims(state, axis = 0))[0]
 
 		highest_activation_features = np.max(encoded_filters, axis = 2)
-		self.activation_threshold = (np.percentile(highest_activation_features, 80) +self.activation_threshold)/2
+		#self.activation_threshold = (np.percentile(highest_activation_features, 80) +self.activation_threshold)/2
 		sufficient_salient_positions = np.argwhere(highest_activation_features > self.activation_threshold)
 
 		detected_entities_sketches = []
@@ -371,11 +438,33 @@ class SymbolicAgent:
 			detected_entities.append(Entity(es.position, es.entity_type, number_of_neighboors))
 
 
+		detected_entities_img = np.zeros(shape = (highest_activation_features.shape))
+
+		if render_extracted:
+
+			print('original state')
+			self.render_image(state)
+			input()
+			for de in detected_entities:
+
+				x,y = de.position
+				detected_entities_img[x][y] = de.entity_type.type_number* 0.1
+
+			print('enitites')
+			self.render_image(detected_entities_img)
+			input()
+			
+			p = self.autoencoder.predict(np.array([state]))[0]
+			print('reconstructed image')
+			self.render_image(p)
+			input()
+
 		return detected_entities
 
 	def reset(self):
 		self.states_dict = {}
 		self.tracked_entities = []
+		pygame.display.quit()
 
 	def save(self, path):
 		pass
