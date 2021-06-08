@@ -69,12 +69,12 @@ class SymbolicAgent:
 		## thresholds
 		self.entity_likelihood_threshold = 0.5
 		self.activation_threshold = 0
-		self.type_distance_threshold = 0.5
+		self.type_distance_threshold = 2
 		
 
 		## max distances
 		self.neighboor_max_distance = 10
-		self.interaction_max_distance = 3
+		self.interaction_max_distance = 10
 
 
 		## same entity weights
@@ -111,7 +111,7 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=100, batch_size = 64)
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=10, batch_size = 64)
 		
 		"""
 		pygame.init()
@@ -245,27 +245,8 @@ class SymbolicAgent:
 		if not self.tracked_entities:
 			self.tracked_entities = detected_entities
 
-		temporally_extended_entities = []
-
-		for te in self.tracked_entities:
-
-			likely_same_entity_list = self.same_entities_likelihoods(te, detected_entities)
-			likely_same_entity_list = [e for e in likely_same_entity_list if e[1] > self.entity_likelihood_threshold] # Removing the entities with likelihood bellow the threshold
-			likely_same_entity_list = sorted(likely_same_entity_list, key = lambda e: e[1], reverse = True)
-
-			if not likely_same_entity_list:
-				# It means that there are no matches for the tracked entity te and therefore it has disappeared
-				null_entity_type = self.entity_types[0]
-				most_likely_entity = Entity(te.position, null_entity_type, None)
-
-			else:
-				most_likely_entity =  likely_same_entity_list[0][0]
-
-			# Update type transition matrix
-			self.update_type_transition_matrix(te.entity_type, most_likely_entity.entity_type)
-			
-			temporally_extended_entities.append(TimeExtendedEntity(te, most_likely_entity))
-
+		temporally_extended_entities = self.extract_temporally_extended_entities(self.tracked_entities,detected_entities)
+		
 		# Updates the tracked entities to be the entites most recently detected
 		self.tracked_entities = detected_entities
 
@@ -279,6 +260,71 @@ class SymbolicAgent:
 				interactions += self.get_interactions(tee1, tee2)
 
 		return interactions
+
+
+	def extract_temporally_extended_entities(self, tracked_entities: [Entity], detected_entities: [Entity]):
+
+		temporally_extended_entities  = []
+
+		tracked_list = tracked_entities.copy()
+		detected_list = detected_entities.copy()
+
+		while(tracked_list and detected_list):
+
+			likelihoods = []
+			for e1 in tracked_list:
+				likelihoods += self.same_entities_likelihoods(e1, detected_list)
+
+			sorted_likelihoods = sorted(likelihoods, key = lambda l:l[1], reverse = True)
+
+			already_liked_entities1 = []
+			already_liked_entities2 = []
+
+			#print(likelihoods)
+			for sl in sorted_likelihoods:
+
+				e1,e2 = sl[0]
+				e1_fingerprint = (e1.position[0], e1.position[1], e1.entity_type.type_number)
+				e2_fingerprint = (e2.position[0], e2.position[1], e2.entity_type.type_number)
+
+				if (e1_fingerprint not in already_liked_entities1) and (e2_fingerprint not in already_liked_entities2):
+					# Time extended entity
+					temporally_extended_entities.append(TimeExtendedEntity(e1, e2))
+					
+					already_liked_entities1.append(e1_fingerprint)
+					already_liked_entities2.append(e2_fingerprint)
+
+					e1_index = [idx for idx in range(len(tracked_list)) if (tracked_list[idx].position[0],\
+					 tracked_list[idx].position[1], tracked_list[idx].entity_type.type_number) == e1_fingerprint]
+					assert(len(e1_index) == 1)
+					tracked_list.pop(e1_index[0])
+
+					e2_index = [idx for idx in range(len(detected_list)) if (detected_list[idx].position[0],\
+					 detected_list[idx].position[1], detected_list[idx].entity_type.type_number) == e2_fingerprint]
+					assert(len(e2_index) == 1)
+					detected_list.pop(e2_index[0])
+				else:
+					break
+
+		null_entity_type = self.entity_types[0]
+		if not tracked_list and detected_list:
+			# These entities appeared expontaineously
+
+			for de in detected_list:
+				null_entity = Entity(de.position, null_entity_type, None)
+				temporally_extended_entities.append(TimeExtendedEntity(null_entity, de))
+
+		elif tracked_list and not detected_list:
+			# These entities disappeared 
+
+			for te in tracked_list:
+				null_entity = Entity(te.position, null_entity_type, None)
+				temporally_extended_entities.append(TimeExtendedEntity(te, null_entity))
+
+		assert(len(temporally_extended_entities) == max(len(tracked_entities), len(detected_entities)))
+		
+		return temporally_extended_entities
+
 
 	def get_interactions(self, tee1: TimeExtendedEntity, tee2: TimeExtendedEntity):
 
@@ -356,7 +402,8 @@ class SymbolicAgent:
 
 			entities_likelihood.append(entity_likelihood)
 
-		return zip(detected_entities, entities_likelihood)
+		detected_entities_plus_original_entitiy = [(entity, de) for de in detected_entities]
+		return list(zip(detected_entities_plus_original_entitiy, entities_likelihood))
 
 	def get_type_transition_probability(self, type1: EntityType, type2: EntityType):
 
