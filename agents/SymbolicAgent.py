@@ -24,8 +24,23 @@ TimeExtendedEntity = namedtuple('TimeExtendedEntity', ['entity_before', 'entity_
 Interaction = namedtuple('Interaction', ['tee1', 'tee2', 'x_dist', 'y_dist'])
 
 # Auxiliary_functions
+
 euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
 
+
+euclidean_dict = {}
+
+def bidimensional_euclidean(a,b):
+
+	x0, y0 = a
+	x1, y1 = b
+	euclidean_key = (x1-x0, y1-y0)
+
+	if euclidean_key not in euclidean_dict.keys():
+
+		euclidean_dict[euclidean_key] = euclidean(a,b)
+
+	return euclidean_dict[euclidean_key]
 
 np.set_printoptions(threshold=np.inf)
 
@@ -149,7 +164,7 @@ class SymbolicAgent:
 		for v in validation_data:
 			encoded_filters = self.encoder.predict(np.expand_dims(v, axis = 0))[0]
 			highest_activation_features = np.max(encoded_filters, axis = 2)
-			thresholds_estimate_list.append(np.percentile(highest_activation_features, 80))
+			thresholds_estimate_list.append(np.percentile(highest_activation_features, 90))
 
 		self.activation_threshold = np.mean(thresholds_estimate_list)
 
@@ -269,11 +284,18 @@ class SymbolicAgent:
 		tracked_list = tracked_entities.copy()
 		detected_list = detected_entities.copy()
 
+		#print('____________________________________')
+		print(len(tracked_entities))
+		print(len(detected_entities))
+		likelihoods_dict = {}
+
 		while(tracked_list and detected_list):
 
 			likelihoods = []
+			#print('calculating likelyhoods')
+			
 			for e1 in tracked_list:
-				likelihoods += self.same_entities_likelihoods(e1, detected_list)
+				likelihoods += self.same_entities_likelihoods(e1, detected_list,likelihoods_dict)
 
 			sorted_likelihoods = sorted(likelihoods, key = lambda l:l[1], reverse = True)
 
@@ -382,25 +404,34 @@ class SymbolicAgent:
 
 		return iad[interaction_before_fingerprint]
 
-	def same_entities_likelihoods(self, entity: Entity, detected_entities : [Entity]):
+	def same_entities_likelihoods(self, entity: Entity, detected_entities : [Entity], likelihood_dict):
 
 		entities_likelihood = []
 
+		e_fingerprint = (entity.position[0], entity.position[1], entity.entity_type.type_number)
 		for de in detected_entities:
 			# Compute the likelihood of the entity and detected_entity being the same
 
-			spatial_proximity = (1/ (1+ euclidean(entity.position, de.position)))
+			de_fingerprint = (de.position[0], de.position[1], de.entity_type.type_number)
 
-			type_transition_probability = self.get_type_transition_probability(entity.entity_type, de.entity_type)
+			likelihood_key = (e_fingerprint, de_fingerprint)
 
-			neighboors_difference = (1/ (1 + abs(entity.number_of_neighboors - de.number_of_neighboors)))
+			if likelihood_key not in likelihood_dict.keys():
 
-			entity_likelihood = (self.spatial_proximity_weight*spatial_proximity + \
-			 self.type_transition_weight *type_transition_probability + \
-			 self.neighboor_weight * neighboors_difference)/ \
-			(self.spatial_proximity_weight + self.type_transition_weight + self.neighboor_weight)
+				spatial_proximity = (1/ (1+ bidimensional_euclidean(entity.position, de.position)))
 
-			entities_likelihood.append(entity_likelihood)
+				type_transition_probability = self.get_type_transition_probability(entity.entity_type, de.entity_type)
+
+				neighboors_difference = (1/ (1 + abs(entity.number_of_neighboors - de.number_of_neighboors)))
+
+				entity_likelihood = (self.spatial_proximity_weight*spatial_proximity + \
+				 self.type_transition_weight *type_transition_probability + \
+				 self.neighboor_weight * neighboors_difference)/ \
+				(self.spatial_proximity_weight + self.type_transition_weight + self.neighboor_weight)
+
+				likelihood_dict[likelihood_key] = entity_likelihood
+
+			entities_likelihood.append(likelihood_dict[likelihood_key])
 
 		detected_entities_plus_original_entitiy = [(entity, de) for de in detected_entities]
 		return list(zip(detected_entities_plus_original_entitiy, entities_likelihood))
@@ -434,7 +465,7 @@ class SymbolicAgent:
 		
 		self.type_transition_matrix[type1_number]['n'] += 1
 
-	def extract_entities(self, state: np.array, render_extracted = False):
+	def extract_entities(self, state: np.array, render_extracted = True):
 		"""
 		Extracts the entities and their locations 
 
