@@ -84,7 +84,7 @@ class SymbolicAgent:
 		## thresholds
 		self.entity_likelihood_threshold = 0.5
 		self.activation_threshold = 0
-		self.type_distance_threshold = 2
+		self.type_distance_threshold = 0.5
 		
 
 		## max distances
@@ -285,8 +285,8 @@ class SymbolicAgent:
 		detected_list = detected_entities.copy()
 
 		#print('____________________________________')
-		print(len(tracked_entities))
-		print(len(detected_entities))
+		#print(len(tracked_entities))
+		#print(len(detected_entities))
 		likelihoods_dict = {}
 
 		while(tracked_list and detected_list):
@@ -465,7 +465,7 @@ class SymbolicAgent:
 		
 		self.type_transition_matrix[type1_number]['n'] += 1
 
-	def extract_entities(self, state: np.array, render_extracted = True):
+	def extract_entities(self, state: np.array, render_extracted = False):
 		"""
 		Extracts the entities and their locations 
 
@@ -531,11 +531,12 @@ class SymbolicAgent:
 			print('enitites')
 			self.render_image(detected_entities_img)
 			input()
-			
+			"""
 			p = self.autoencoder.predict(np.array([state]))[0]
 			print('reconstructed image')
 			self.render_image(p)
 			input()
+			"""
 
 		return detected_entities
 
