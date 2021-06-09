@@ -126,7 +126,7 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=10, batch_size = 64)
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=100, batch_size = 64)
 		
 		"""
 		pygame.init()
@@ -239,9 +239,11 @@ class SymbolicAgent:
 
 	def get_state_representation(self, state):
 		
-		state_string = str(state)
-		if state_string not in self.states_dict.keys():
-			self.states_dict[state_string] = self.build_state_representation(state)
+		s, new_state_flag = state
+		state_string = str(s)
+
+		if new_state_flag:
+			self.states_dict[state_string] = self.build_state_representation(s)
 
 		return self.states_dict[state_string]
 
@@ -362,10 +364,10 @@ class SymbolicAgent:
 		
 
 	def update(self, state, action, reward, next_state, done):
-		"""
+		
 		interactions_before = self.get_state_representation(state)
 		interactions_after = self.get_state_representation(next_state)
-
+		"""
 		interactions_after_dict = self.build_interactions_after_dict(interactions_after)
 
 		for ib in interactions_before:
@@ -379,7 +381,7 @@ class SymbolicAgent:
 
 			self.update_q_value_function(ib, Q_ib)
 		"""
-		pass
+		
 
 	def build_interactions_after_dict(self, interactions_after):
 
@@ -465,7 +467,7 @@ class SymbolicAgent:
 		
 		self.type_transition_matrix[type1_number]['n'] += 1
 
-	def extract_entities(self, state: np.array, render_extracted = False):
+	def extract_entities(self, state: np.array, render_extracted = True):
 		"""
 		Extracts the entities and their locations 
 
@@ -531,12 +533,11 @@ class SymbolicAgent:
 			print('enitites')
 			self.render_image(detected_entities_img)
 			input()
-			"""
+
 			p = self.autoencoder.predict(np.array([state]))[0]
 			print('reconstructed image')
 			self.render_image(p)
 			input()
-			"""
 
 		return detected_entities
 
