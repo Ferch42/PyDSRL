@@ -18,29 +18,12 @@ from sklearn.metrics import pairwise
 
 # namedtuple definitions
 EntityType = namedtuple('EntityType', ['activation_spectra', 'type_number'])
-EntitySketch = namedtuple('EntitySketch',['position', 'entity_type'])
-Entity = namedtuple('Entity', ['position', 'entity_type', 'number_of_neighboors'])
-TimeExtendedEntity = namedtuple('TimeExtendedEntity', ['entity_before', 'entity_after'])
-Interaction = namedtuple('Interaction', ['tee1', 'tee2', 'x_dist', 'y_dist'])
+Entity = namedtuple('Entity', ['position', 'entity_type'])
+Interaction = namedtuple('Interaction', ['entity_type1', 'entity_type2', 'x_dist', 'y_dist'])
 
 # Auxiliary_functions
 
 euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
-
-
-euclidean_dict = {}
-
-def bidimensional_euclidean(a,b):
-
-	x0, y0 = a
-	x1, y1 = b
-	euclidean_key = (x1-x0, y1-y0)
-
-	if euclidean_key not in euclidean_dict.keys():
-
-		euclidean_dict[euclidean_key] = euclidean(a,b)
-
-	return euclidean_dict[euclidean_key]
 
 np.set_printoptions(threshold=np.inf)
 
@@ -72,6 +55,8 @@ class SymbolicAgent:
 		# RL
 		self.gamma = 0.99
 		self.lr = 0.1
+		self.epsilon = 1
+		self.epsilon_decay = 0.99998
 
 		# Auxiliary data structures
 		self.type_transition_matrix = {}
@@ -97,9 +82,6 @@ class SymbolicAgent:
 		self.type_transition_weight = 1
 		self.neighboor_weight = 1
 		
-		# epsilon greedy
-		self.epsilon = 1
-
 		# Autoencoder
 		self.build_autoencoder()
 		self.train_autoencoder(pre_training_images)
@@ -126,37 +108,7 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=100, batch_size = 64)
-		
-		"""
-		pygame.init()
-		self.viewer = pygame.display.set_mode((350, 350))
-		self.clock = pygame.time.Clock()
-
-		for v in validation_data:
-
-			print('IMAGEM ANTES')
-			squeezed_combined_state = resize(np.squeeze(v, axis = 2), (350, 350), mode='edge', preserve_range=True)*255
-			surf = pygame.surfarray.make_surface(squeezed_combined_state).convert_alpha()
-			pygame.event.poll()
-			self.viewer.blit(surf, (0, 0))
-			self.clock.tick(60)
-			pygame.display.update()
-
-			input()
-			print('IMAGEM DEPOIS')
-
-			p = self.autoencoder.predict(np.array([v]))[0]
-			squeezed_combined_state = resize(np.squeeze(p, axis = 2), (350, 350), mode='edge', preserve_range=True)*255
-			surf = pygame.surfarray.make_surface(squeezed_combined_state).convert_alpha()
-			pygame.event.poll()
-			self.viewer.blit(surf, (0, 0))
-			self.clock.tick(60)
-			pygame.display.update()
-			input()
-
-		pygame.display.quit()
-		"""
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=10, batch_size = 64)
 
 		# Using the validation data in order to estimate activation threshold
 		thresholds_estimate_list = []
@@ -168,15 +120,6 @@ class SymbolicAgent:
 
 		self.activation_threshold = np.mean(thresholds_estimate_list)
 
-		"""
-		for v in validation_data:
-
-			self.extract_entities(v)
-			p = self.autoencoder.predict(np.array([v]))[0]
-			print('reconstructed image')
-			self.render_image(p)
-			input()
-		"""
 
 	def render_image(self, state):
 
@@ -200,50 +143,35 @@ class SymbolicAgent:
 
 	def act(self, state, random_act = True):
 		
-		interactions = self.get_state_representation(state)
-		"""
-		Q_values = np.zeros(self.action_size)
-		for i in interactions:
-			Q_values += self.get_q_value_function(i)
+		Q_values = self.get_Q_total(self.get_state_representation(state))
 
+		print(Q_values)
 		if random_act:
 			if np.random.random() < self.epsilon:
 				return np.random.choice(range(self.action_size))
-		#print(Q_values)
+		
 		Q_max = Q_values.max()
 		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
 		
-		self.epsilon = max(0.1, self.epsilon*0.999)
-		"""
-		return np.random.choice(range(self.action_size))
+		self.epsilon = max(0.1, self.epsilon*self.epsilon_decay)
+		
+		return np.random.choice(Q_max_indexes)
 
 	def get_q_value_function(self, i: Interaction):
 
-		interaction_key = (i.tee1.entity_after.entity_type.type_number, \
-							i.tee2.entity_after.entity_type.type_number, \
-							i.x_dist, i.y_dist)
+		if i not in self.interactions_Q_functions.keys():
 
-		if interaction_key not in self.interactions_Q_functions.keys():
+			self.interactions_Q_functions[i] = np.zeros(self.action_size)
 
-			self.interactions_Q_functions[interaction_key] = np.zeros(self.action_size)
+		return self.interactions_Q_functions[i]
 
-		return self.interactions_Q_functions[interaction_key]
-
-	def update_q_value_function(self, i:Interaction, q_value: np.array):
-
-		interaction_key = (i.tee1.entity_after.entity_type.type_number, \
-							i.tee2.entity_after.entity_type.type_number, \
-							i.x_dist, i.y_dist)
-
-		self.interactions_Q_functions[interaction_key] = q_value
 
 	def get_state_representation(self, state):
-		
-		s, new_state_flag = state
-		state_string = str(s)
 
-		if new_state_flag:
-			self.states_dict[state_string] = self.build_state_representation(s)
+		state_string = str(state)
+
+		if state_string not in self.states_dict.keys():
+			self.states_dict[state_string] = self.build_state_representation(state)
 
 		return self.states_dict[state_string]
 
@@ -259,215 +187,56 @@ class SymbolicAgent:
 		"""
 		detected_entities = self.extract_entities(state)
 		
-		if not self.tracked_entities:
-			self.tracked_entities = detected_entities
-
-		temporally_extended_entities = self.extract_temporally_extended_entities(self.tracked_entities,detected_entities)
-		
-		# Updates the tracked entities to be the entites most recently detected
-		self.tracked_entities = detected_entities
+		n_entities = len(detected_entities)
 
 		interactions = []
-		n_tee = len(temporally_extended_entities)
+		for i in range(n_entities-1):
+			for j in range(i, n_entities):
 
-		for i in range(n_tee-1):
-			for j in range(i+1, n_tee):
-				tee1 = temporally_extended_entities[i]
-				tee2 = temporally_extended_entities[j]
-				interactions += self.get_interactions(tee1, tee2)
+				e1 = detected_entities[i]
+				e2 = detected_entities[j]
+
+				if euclidean(e1.position, e2.position) < self.interaction_max_distance:
+					# Valid interaction
+
+					# Sorting entities by their type in order to mantain consistency
+					se1, se2 = sorted([e1, e2], key = lambda x: x.entity_type.type_number)
+					x_dist, y_dist = se1.position - se2.position
+
+					interactions.append(Interaction(se1.entity_type.type_number, \
+						se2.entity_type.type_number, x_dist, y_dist))
 
 		return interactions
 
 
-	def extract_temporally_extended_entities(self, tracked_entities: [Entity], detected_entities: [Entity]):
+	def get_Q_total(self, interactions):
 
-		temporally_extended_entities  = []
+		Q_values = np.zeros(self.action_size)
+		for i in interactions:
+			Q_values += self.get_q_value_function(i)
 
-		tracked_list = tracked_entities.copy()
-		detected_list = detected_entities.copy()
-
-		#print('____________________________________')
-		#print(len(tracked_entities))
-		#print(len(detected_entities))
-		likelihoods_dict = {}
-
-		while(tracked_list and detected_list):
-
-			likelihoods = []
-			#print('calculating likelyhoods')
-			
-			for e1 in tracked_list:
-				likelihoods += self.same_entities_likelihoods(e1, detected_list,likelihoods_dict)
-
-			sorted_likelihoods = sorted(likelihoods, key = lambda l:l[1], reverse = True)
-
-			already_liked_entities1 = []
-			already_liked_entities2 = []
-
-			#print(likelihoods)
-			for sl in sorted_likelihoods:
-
-				e1,e2 = sl[0]
-				e1_fingerprint = (e1.position[0], e1.position[1], e1.entity_type.type_number)
-				e2_fingerprint = (e2.position[0], e2.position[1], e2.entity_type.type_number)
-
-				if (e1_fingerprint not in already_liked_entities1) and (e2_fingerprint not in already_liked_entities2):
-					# Time extended entity
-					temporally_extended_entities.append(TimeExtendedEntity(e1, e2))
-					
-					already_liked_entities1.append(e1_fingerprint)
-					already_liked_entities2.append(e2_fingerprint)
-
-					e1_index = [idx for idx in range(len(tracked_list)) if (tracked_list[idx].position[0],\
-					 tracked_list[idx].position[1], tracked_list[idx].entity_type.type_number) == e1_fingerprint]
-					assert(len(e1_index) == 1)
-					tracked_list.pop(e1_index[0])
-
-					e2_index = [idx for idx in range(len(detected_list)) if (detected_list[idx].position[0],\
-					 detected_list[idx].position[1], detected_list[idx].entity_type.type_number) == e2_fingerprint]
-					assert(len(e2_index) == 1)
-					detected_list.pop(e2_index[0])
-				else:
-					break
-
-		null_entity_type = self.entity_types[0]
-		if not tracked_list and detected_list:
-			# These entities appeared expontaineously
-
-			for de in detected_list:
-				null_entity = Entity(de.position, null_entity_type, None)
-				temporally_extended_entities.append(TimeExtendedEntity(null_entity, de))
-
-		elif tracked_list and not detected_list:
-			# These entities disappeared 
-
-			for te in tracked_list:
-				null_entity = Entity(te.position, null_entity_type, None)
-				temporally_extended_entities.append(TimeExtendedEntity(te, null_entity))
-
-		assert(len(temporally_extended_entities) == max(len(tracked_entities), len(detected_entities)))
-		
-		return temporally_extended_entities
-
-
-	def get_interactions(self, tee1: TimeExtendedEntity, tee2: TimeExtendedEntity):
-
-		# check for spatial proximity (if the final distance between them is bellow a certain
-		# distance threshold)
-		if euclidean(tee1.entity_after.position, tee2.entity_after.position) < self.interaction_max_distance:
-			# There is an interaction between the two entitites
-			stee1, stee2 = sorted([tee1, tee2], key = lambda t: t.entity_after.entity_type.type_number)
-			x_dist, y_dist = stee1.entity_after.position - stee2.entity_after.position
-			return [Interaction(stee1, stee2, x_dist, y_dist)]
-		else:
-			return []
-		
+		return Q_values
 
 	def update(self, state, action, reward, next_state, done):
 		
 		interactions_before = self.get_state_representation(state)
 		interactions_after = self.get_state_representation(next_state)
-		"""
-		interactions_after_dict = self.build_interactions_after_dict(interactions_after)
+		
+		Q_before = self.get_Q_total(interactions_before)
+		Q_after = self.get_Q_total(interactions_after)
+
+		td = reward + Q_after.max() *(1 - int(done)) - Q_before[action]
+
 
 		for ib in interactions_before:
 
-			ia = self.find_corresponding_interaction(ib, interactions_after_dict)
+			Q_int = self.get_q_value_function(ib)
 
-			Q_ib = self.get_q_value_function(ib).copy()
-			Q_ia = self.get_q_value_function(ia).copy()
+			Q_int[action] = Q_int[action] + self.lr* td
 
-			Q_ib[action] = Q_ib[action] + self.lr* (reward + self.gamma * Q_ia.max() - Q_ib[action])
 
-			self.update_q_value_function(ib, Q_ib)
-		"""
-		
 
-	def build_interactions_after_dict(self, interactions_after):
-
-		interactions_after_dict = {}
-
-		for ia in interactions_after:
-			interaction_after_fingerprint = (ia.tee1.entity_before.entity_type.type_number, \
-				ia.tee1.entity_before.position[0], ia.tee1.entity_before.position[1],\
-				ia.tee2.entity_before.entity_type.type_number,\
-				ia.tee2.entity_before.position[0], ia.tee2.entity_before.position[1])
-			interactions_after_dict[interaction_after_fingerprint] = ia
-
-		return interactions_after_dict
-
-	def find_corresponding_interaction(self, i: Interaction, iad: dict):
-
-		# Entity fingerprint after
-		interaction_before_fingerprint = (i.tee1.entity_after.entity_type.type_number, \
-			i.tee1.entity_after.position[0], i.tee1.entity_after.position[1],\
-			i.tee2.entity_after.entity_type.type_number,\
-			i.tee2.entity_after.position[0], i.tee2.entity_after.position[1])
-
-		return iad[interaction_before_fingerprint]
-
-	def same_entities_likelihoods(self, entity: Entity, detected_entities : [Entity], likelihood_dict):
-
-		entities_likelihood = []
-
-		e_fingerprint = (entity.position[0], entity.position[1], entity.entity_type.type_number)
-		for de in detected_entities:
-			# Compute the likelihood of the entity and detected_entity being the same
-
-			de_fingerprint = (de.position[0], de.position[1], de.entity_type.type_number)
-
-			likelihood_key = (e_fingerprint, de_fingerprint)
-
-			if likelihood_key not in likelihood_dict.keys():
-
-				spatial_proximity = (1/ (1+ bidimensional_euclidean(entity.position, de.position)))
-
-				type_transition_probability = self.get_type_transition_probability(entity.entity_type, de.entity_type)
-
-				neighboors_difference = (1/ (1 + abs(entity.number_of_neighboors - de.number_of_neighboors)))
-
-				entity_likelihood = (self.spatial_proximity_weight*spatial_proximity + \
-				 self.type_transition_weight *type_transition_probability + \
-				 self.neighboor_weight * neighboors_difference)/ \
-				(self.spatial_proximity_weight + self.type_transition_weight + self.neighboor_weight)
-
-				likelihood_dict[likelihood_key] = entity_likelihood
-
-			entities_likelihood.append(likelihood_dict[likelihood_key])
-
-		detected_entities_plus_original_entitiy = [(entity, de) for de in detected_entities]
-		return list(zip(detected_entities_plus_original_entitiy, entities_likelihood))
-
-	def get_type_transition_probability(self, type1: EntityType, type2: EntityType):
-
-		type1_number = type1.type_number
-		type2_number = type2.type_number
-
-		if type1_number not in self.type_transition_matrix:
-
-			self.type_transition_matrix[type1_number] = {
-				type1_number: 1, # Counts the number of times that type1 has transitioned to type1
-				'n':1,      # Counts the number of type transitions starting from type1
-				}
-
-		total_number_of_transitions = self.type_transition_matrix[type1_number]['n']
-		type2_count_number = self.type_transition_matrix[type1_number].get(type2_number, 0) # Gets the type2 count or returns 0 as default
-
-		return type2_count_number/total_number_of_transitions
-
-	def update_type_transition_matrix(self, type1: EntityType, type2: EntityType):
-		
-		type1_number = type1.type_number
-		type2_number = type2.type_number
-		
-		if type2_number not in self.type_transition_matrix[type1_number].keys():
-			self.type_transition_matrix[type1_number][type2_number] = 1
-		else:
-			self.type_transition_matrix[type1_number][type2_number] += 1
-		
-		self.type_transition_matrix[type1_number]['n'] += 1
-
-	def extract_entities(self, state: np.array, render_extracted = True):
+	def extract_entities(self, state: np.array, render_extracted = False):
 		"""
 		Extracts the entities and their locations 
 
@@ -484,7 +253,7 @@ class SymbolicAgent:
 		#self.activation_threshold = (np.percentile(highest_activation_features, 80) +self.activation_threshold)/2
 		sufficient_salient_positions = np.argwhere(highest_activation_features > self.activation_threshold)
 
-		detected_entities_sketches = []
+		detected_entities = []
 
 		for position in sufficient_salient_positions:
 
@@ -495,7 +264,7 @@ class SymbolicAgent:
 			for entity_type in self.entity_types:
 				if euclidean(entity_type.activation_spectra, activation_spectra) < self.type_distance_threshold:
 
-					detected_entities_sketches.append(EntitySketch(position, entity_type))
+					detected_entities.append(Entity(position, entity_type))
 					new_entity_type_flag = False
 					break
 
@@ -505,18 +274,7 @@ class SymbolicAgent:
 				new_entity_type = EntityType(activation_spectra , len(self.entity_types))
 				self.entity_types.append(new_entity_type)
 
-				detected_entities_sketches.append(EntitySketch(position, new_entity_type))
-
-		entities_positions = [es.position for es in detected_entities_sketches]
-		pairwise_neighboors_distances = pairwise.euclidean_distances(entities_positions, entities_positions)
-
-		detected_entities = []
-
-		for i, es in enumerate(detected_entities_sketches):
-
-			number_of_neighboors = np.count_nonzero((pairwise_neighboors_distances[i] - self.neighboor_max_distance) < 0) - 1
-			detected_entities.append(Entity(es.position, es.entity_type, number_of_neighboors))
-
+				detected_entities.append(Entity(position, new_entity_type))
 
 		detected_entities_img = np.zeros(shape = (highest_activation_features.shape))
 
@@ -542,8 +300,6 @@ class SymbolicAgent:
 		return detected_entities
 
 	def reset(self):
-		self.states_dict = {}
-		self.tracked_entities = []
 		pygame.display.quit()
 
 	def save(self, path):
