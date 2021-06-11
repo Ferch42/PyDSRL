@@ -59,8 +59,6 @@ class SymbolicAgent:
 		self.epsilon_decay = 0.99998
 
 		# Auxiliary data structures
-		self.type_transition_matrix = {}
-		self.tracked_entities = []
 		self.entity_types = [EntityType(np.full(self.number_of_convolutions , np.inf), 0)] # Initializes with null-type
 		self.interactions_Q_functions = {}
 		self.states_dict = {}
@@ -182,7 +180,7 @@ class SymbolicAgent:
 
 		interactions = set()
 		for i in range(n_entities-1):
-			for j in range(i, n_entities):
+			for j in range(i+1, n_entities):
 
 				e1 = detected_entities[i]
 				e2 = detected_entities[j]
@@ -217,10 +215,7 @@ class SymbolicAgent:
 		Q_before = self.get_Q_total(interactions_before)
 		Q_after = self.get_Q_total(interactions_after)
 
-		td = reward + Q_after.max() *(1- int(done)) - Q_before[action]
-
-		if done:
-			print(Q_before.mean())
+		td = reward + Q_after.max()  - Q_before[action]
 
 		for ib in interactions_before:
 			# Interactions
