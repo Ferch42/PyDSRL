@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 import tqdm
 import cross_circle_gym
-from agents import DQNAgent, SymbolicAgent
+from agents import DQNAgent, SymbolicAgent, SymbolicAgentv2
 from utils import make_autoencoder_train_data
 import gym
 
@@ -17,7 +17,7 @@ parser.add_argument('--episodes', '-e', type=int, default=1000,
 					help='number of DQN training episodes')
 parser.add_argument('--evaluation_frequency', type=int, default=100,
 					help='How often to evaluate the agent')
-parser.add_argument('--agent', type = str, default = 'symb', 
+parser.add_argument('--agent', type = str, default = 'symbv2', 
 					help='What agent do you want to evaluate (dqn or symb)')
 # Saving and logging config
 parser.add_argument('--experiment_name', type=str, default='default', help='Name of the experiment')
@@ -31,7 +31,11 @@ args.logdir = os.path.join(args.logdir,args.experiment_name,args.agent, now)
 env = gym.make("CrossCircle-MixedGrid-v0")
 
 action_size = env.action_space.n
-state_dim = env.reset().shape
+
+symbv2flag = args.agent =='symbv2'
+state_dim = None
+if not symbv2flag:
+	state_dim = env.reset().shape
 
 
 agent = None
@@ -39,6 +43,9 @@ if args.agent=='dqn':
 	agent = DQNAgent(state_dim, action_size)
 elif args.agent=='symb':
 	agent = SymbolicAgent(state_dim, action_size, make_autoencoder_train_data(5000))
+elif args.agent=='symbv2':
+	agent = SymbolicAgentv2(action_size)
+
 else:
 	raise Exception('agent type not found')
 
@@ -76,6 +83,9 @@ for e in tqdm.tqdm(range(args.episodes)):
 		tf.summary.scalar('Averaged Reward',np.mean(buffered_rewards),e)
 		tf.summary.scalar('Epsilon',agent.epsilon,e)
 
+	if e%args.evaluation_frequency ==0:
+		agent.save(os.path.join(args.logdir,'agent'))
+	"""
 	if e % args.evaluation_frequency == 0:
 		number_of_evaluations += 1
 		agent.save(os.path.join(args.logdir,'dqn_agent.h5'))
@@ -106,3 +116,4 @@ for e in tqdm.tqdm(range(args.episodes)):
 
 			tf.summary.scalar('Evaluation Reward',np.mean(evaluation_reward),number_of_evaluations)
 
+	"""
