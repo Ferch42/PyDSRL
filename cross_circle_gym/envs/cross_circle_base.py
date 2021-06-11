@@ -86,6 +86,7 @@ class Entity(object):
         area = np.maximum(overlap_bottom - overlap_top, 0) * np.maximum(overlap_right - overlap_left, 0)
         return area
 
+    @property    
     def centre(self):
         return (
             self.top + self.h / 2.,
@@ -107,7 +108,7 @@ class CrossCircleBase(gym.Env):
 
     def __init__(
             self, field_dim=84, background_colour='white', shape_colours="white white white",
-            entity_size=10, min_entities=16, max_entities=16, max_overlap_factor=0.0, overlap_factor=0.2, step_size=1, color_state=False):
+            entity_size=10, min_entities=16, max_entities=16, max_overlap_factor=0.0, overlap_factor=0.01, step_size=3, color_state=False):
 
         self.field_dim = field_dim
         self.background_colour = background_colour
@@ -212,14 +213,22 @@ class CrossCircleBase(gym.Env):
         reward = collision['cross'] - collision['circle']
 
         info = {'entities': self.entities, 'agent': self.agent}
-        return self.combined_state, reward, False, info
+        #info = self.get_info()
+        #return info
+        #return self.combined_state, reward, False, info
+        return info, reward, False, info
 
     def reset(self):
         '''Clear entities and state, call setup_field()'''
         self.entities = {'cross': [], 'circle': []}
         self.agent = None
         self.setup_field()
-        return self.combined_state
+        #return self.combined_state
+        return self.get_info()
+
+    def get_info(self):
+
+        return {'entities': self.entities, 'agent': self.agent}
 
     def setup_field(self):
         '''Calls layout. Meant as a chance for subclasses to alter layout() call'''

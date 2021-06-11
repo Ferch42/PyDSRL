@@ -54,8 +54,7 @@ class SymbolicAgent:
 
 		# RL
 		self.gamma = 0.99
-		self.lamb = 0.99
-		self.lr = 0.001
+		self.lr = 0.00001
 		self.epsilon = 1
 		self.epsilon_decay = 0.99998
 
@@ -64,25 +63,16 @@ class SymbolicAgent:
 		self.tracked_entities = []
 		self.entity_types = [EntityType(np.full(self.number_of_convolutions , np.inf), 0)] # Initializes with null-type
 		self.interactions_Q_functions = {}
-		self.interactions_eligibilty_traces = {}
 		self.states_dict = {}
 
 		# Entity tracking
 		## thresholds
-		self.entity_likelihood_threshold = 0.5
 		self.activation_threshold = 0
 		self.type_distance_threshold = 0.5
 		
 
 		## max distances
-		self.neighboor_max_distance = 10
 		self.interaction_max_distance = 10
-
-
-		## same entity weights
-		self.spatial_proximity_weight = 1
-		self.type_transition_weight = 1
-		self.neighboor_weight = 1
 		
 		# Autoencoder
 		self.build_autoencoder()
@@ -164,25 +154,8 @@ class SymbolicAgent:
 		if i not in self.interactions_Q_functions.keys():
 
 			self.interactions_Q_functions[i] = np.zeros(self.action_size)
-			self.interactions_eligibilty_traces[i]  = np.zeros(self.action_size)
 
 		return self.interactions_Q_functions[i]
-
-	def reset_eligibity_traces_to_zero(self):
-		"""
-		Resets the eligibity traces vector to zero
-		"""
-		for i in self.interactions_Q_functions.keys():
-
-			self.interactions_eligibilty_traces[i]  = np.zeros(self.action_size)
-
-	def update_eligibity_traces_vector(self):
-		"""
-		Updates the all eligibility traces
-		"""
-		for i in self.interactions_Q_functions.keys():
-
-			self.interactions_eligibilty_traces[i] = self.interactions_eligibilty_traces[i]* self.lamb * self.gamma
 
 	def get_state_representation(self, state):
 
@@ -244,32 +217,15 @@ class SymbolicAgent:
 		Q_before = self.get_Q_total(interactions_before)
 		Q_after = self.get_Q_total(interactions_after)
 
-		Q_before_max = Q_before.max()
-		best_actions = [idx for idx in range(self.action_size) if Q_before[idx] == Q_before_max]
-		
-		if action not in best_actions:
-			self.reset_eligibity_traces_to_zero()
-
-		print("Q before" ,Q_before)
-		print("Q after", Q_after)
 		td = reward + Q_after.max() *(1- int(done)) - Q_before[action]
 
-		for ib in interactions_before:
-			# Accumulating traces
-
-			self.interactions_eligibilty_traces[ib][action] = self.interactions_eligibilty_traces[ib][action]+1
-
 		if done:
+			print(Q_before.mean())
 
-			for i in self.interactions_Q_functions.keys():
-				self.interactions_Q_functions[i] = self.interactions_Q_functions[i] + self.lr* td * self.interactions_eligibilty_traces[i]
-
-			self.reset_eligibity_traces_to_zero()
-		else:
-			for i in self.interactions_Q_functions.keys():
-				self.interactions_Q_functions[i] = self.interactions_Q_functions[i] + self.lr* td * self.interactions_eligibilty_traces[i]
-
-			self.update_eligibity_traces_vector()
+		for ib in interactions_before:
+			# Interactions
+			Q_int = self.get_q_value_function(ib)
+			Q_int[action] = Q_int[action] + self.lr* td
 
 	def extract_entities(self, state: np.array, render_extracted = False):
 		"""
