@@ -143,8 +143,6 @@ class SymbolicAgent:
 		Q_max = Q_values.max()
 		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
 		
-		self.epsilon = max(0.1, self.epsilon*self.epsilon_decay)
-		
 		return np.random.choice(Q_max_indexes)
 
 	def get_q_value_function(self, i: Interaction):
@@ -221,6 +219,8 @@ class SymbolicAgent:
 			# Interactions
 			Q_int = self.get_q_value_function(ib)
 			Q_int[action] = Q_int[action] + self.lr* td
+			
+		self.epsilon = max(0.1, self.epsilon*self.epsilon_decay)
 
 	def extract_entities(self, state: np.array, render_extracted = False):
 		"""

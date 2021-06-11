@@ -2,7 +2,6 @@ import random
 from collections import namedtuple
 from collections import deque
 
-import pickle
 import pygame
 import numpy as np
 
@@ -15,7 +14,7 @@ Interaction = namedtuple('Interaction', ['entity_type1', 'entity_type2', 'x_dist
 
 euclidean = lambda x, y: np.sqrt(np.sum(np.square(np.subtract(x,y))))
 
-class SymbolicAgentv2:
+class SymbolicAgentDQN:
 
 	def __init__(self, action_size: int):
 
@@ -24,7 +23,7 @@ class SymbolicAgentv2:
 		self.gamma = 0.99
 		self.lr = 0.001
 		self.epsilon = 1
-		self.epsilon_decay = 0.999995
+		self.epsilon_decay = 0.99999
 
 		# Auxiliary data structures
 		self.entity_types = [EntityType(None, 0), EntityType('agent', 1), \
@@ -135,7 +134,7 @@ class SymbolicAgentv2:
 
 		return detected_entities
 
-	def build_state_representation(self, state, only_agent_interactions = True):
+	def build_state_representation(self, state):
 		"""
 		Builds the state representation
 
@@ -156,10 +155,6 @@ class SymbolicAgentv2:
 				e1 = detected_entities[i]
 				e2 = detected_entities[j]
 
-				if only_agent_interactions and not (e1.entity_type.type_number == 1 or e2.entity_type.type_number == 1):
-
-					continue
-
 				if euclidean(e1.position, e2.position) < self.interaction_max_distance:
 					# Valid interaction
 					# Sorting entities by their type in order to mantain consistency
@@ -169,14 +164,11 @@ class SymbolicAgentv2:
 					interactions.add(Interaction(se1.entity_type.type_number, \
 						se2.entity_type.type_number, x_dist, y_dist))
 		#print(interactions)
-		print('----------------------------------------------------------------')
-		print(len(interactions))
-		print(interactions)
 		return interactions
 
 	def reset(self):
 		pygame.display.quit()
 
 	def save(self, path):
-		pickle.dump(self.interactions_Q_functions, open(path, "wb+") )
+		pass
 
