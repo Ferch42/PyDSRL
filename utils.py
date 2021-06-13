@@ -4,10 +4,10 @@ import gym
 import numpy as np
 import pickle
 from sklearn.model_selection import train_test_split
-
+from tqdm import tqdm
 from components.autoencoder import SymbolAutoencoder
 
-def make_autoencoder_train_data(env_parameters, num, args, min_entities=1, max_entities=30):
+def make_autoencoder_train_data(num, min_entities=1, max_entities=30):
     '''
     Make training images for the autoencoder
 
@@ -19,15 +19,16 @@ def make_autoencoder_train_data(env_parameters, num, args, min_entities=1, max_e
     return: (np.array) BxWxHxC dataset of environment images
     '''
 
-    temp_env = gym.make('CrossCircle-MixedRand-v0',**env_parameters)
+    temp_env = gym.make('CrossCircle-MixedRand-v0')
     temp_env.seed(0)
     states = []
-    for i in range(num):
+    print('generating samples')
+    for i in tqdm(range(num)):
         state = temp_env.make_random_state(min_entities, max_entities)
         if len(state)==0:
             continue
         states.append(state)
-    args.logger.info(f'Final number of states collected in the current configuration {len(states)}')
+    #args.logger.info(f'Final number of states collected in the current configuration {len(states)}')
 
     if (len(states)/num)<0.8:
         raise Exception('With the current environment configuration entities do /'
