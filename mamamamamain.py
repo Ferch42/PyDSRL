@@ -13,20 +13,20 @@ import gym
 parser = argparse.ArgumentParser(description=None)
 
 # Experiment variables
-parser.add_argument('--episodes', '-e', type=int, default=1000,
+parser.add_argument('--episodes', '-e', type=int, default=10_000,
 					help='number of DQN training episodes')
-parser.add_argument('--evaluation_frequency', type=int, default=100,
+parser.add_argument('--evaluation_frequency', type=int, default=1_000,
 					help='How often to evaluate the agent')
 parser.add_argument('--agent', type = str, default = 'symbv2', 
 					help='What agent do you want to evaluate (dqn or symb)')
 # Saving and logging config
 parser.add_argument('--experiment_name', type=str, default='default', help='Name of the experiment')
 parser.add_argument('--logdir',type=str,default='./logs', help='Log directory')
+parser.add_argument('--name',type=str,default='exp', help='name')
 
 args = parser.parse_args()
 
-now = datetime.now().strftime("%d_%m_%Y_%H_%M_%S")
-args.logdir = os.path.join(args.logdir,args.experiment_name,args.agent, now)
+args.logdir = os.path.join(args.logdir,args.experiment_name,args.agent, args.name)
 
 env = gym.make("CrossCircle-MixedGrid-v0")
 

@@ -1,5 +1,6 @@
 import random
 from collections import namedtuple
+from collections import deque
 #from scipy.spatial.distance import euclidean
 
 import pygame
@@ -16,6 +17,7 @@ from tensorflow.keras.losses import MeanSquaredError
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import pairwise
 
+from tqdm import tqdm
 # namedtuple definitions
 EntityType = namedtuple('EntityType', ['activation_spectra', 'type_number'])
 Entity = namedtuple('Entity', ['position', 'entity_type'])
@@ -56,21 +58,23 @@ class SymbolicAgent:
 		self.gamma = 0.99
 		self.lr = 0.00001
 		self.epsilon = 1
-		self.epsilon_decay = 0.99998
+		self.epsilon_decay = 0.999995
+		self.batch_size = 32
 
 		# Auxiliary data structures
 		self.entity_types = [EntityType(np.full(self.number_of_convolutions , np.inf), 0)] # Initializes with null-type
 		self.interactions_Q_functions = {}
 		self.states_dict = {}
+		self.experience_replay_buffer = deque(maxlen = 1_000)
 
 		# Entity tracking
 		## thresholds
 		self.activation_threshold = 0
-		self.type_distance_threshold = 0.5
+		self.type_distance_threshold = 1
 		
 
 		## max distances
-		self.interaction_max_distance = 10
+		self.interaction_max_distance = 20
 		
 		# Autoencoder
 		self.build_autoencoder()
@@ -85,12 +89,15 @@ class SymbolicAgent:
 		input_state = Input(shape = self.state_dim)
 		conv = Conv2D(self.number_of_convolutions, (5,5), activation = 'relu')(input_state)
 		max_pool = MaxPooling2D((2,2))(conv)
+		#max_pool2 = MaxPooling2D((2,2))(max_pool)
+		#up_sample2 = UpSampling2D((2,2))(max_pool2) 
 		up_sample = UpSampling2D((2,2))(max_pool)
 		conv_trans = Conv2DTranspose(1, (5,5), activation = 'sigmoid')(up_sample)
 
 		self.encoder = Model(input_state, max_pool)
 		self.autoencoder = Model(input_state, conv_trans)
 		self.autoencoder.compile(optimizer=Adam(learning_rate=0.0001, clipnorm=1.0), loss='binary_crossentropy', metrics=['accuracy'])
+		print(self.autoencoder.summary())
 
 	def train_autoencoder(self, pre_training_images: np.array):
 		"""
@@ -98,7 +105,7 @@ class SymbolicAgent:
 		"""
 		print("Training autoencoder...")
 		train_data, validation_data = train_test_split(pre_training_images, test_size=0.1)
-		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=10, batch_size = 64)
+		self.autoencoder.fit(train_data, train_data, validation_data=(validation_data, validation_data), verbose = 1, epochs=100, batch_size = 64)
 
 		# Using the validation data in order to estimate activation threshold
 		thresholds_estimate_list = []
@@ -173,7 +180,7 @@ class SymbolicAgent:
 			interactions: [Interaction]
 		"""
 		detected_entities = self.extract_entities(state)
-		
+		print('detected ent', len(detected_entities))
 		n_entities = len(detected_entities)
 
 		interactions = set()
@@ -193,6 +200,7 @@ class SymbolicAgent:
 					interactions.add(Interaction(se1.entity_type.type_number, \
 						se2.entity_type.type_number, x_dist, y_dist))
 
+		print('interactions', len(interactions))
 		return interactions
 
 
@@ -206,6 +214,19 @@ class SymbolicAgent:
 
 
 	def update(self, state, action, reward, next_state, done):
+
+		self.experience_replay_buffer.append((state,action, reward, next_state, done))
+
+		if len(self.experience_replay_buffer)> self.batch_size:
+			batch = random.sample(self.experience_replay_buffer, self.batch_size)
+
+			for experience in batch:
+				self.remember(*experience)
+
+		self.epsilon = max(0.1, self.epsilon*self.epsilon_decay)
+
+
+	def remember(self, state, action, reward, next_state, done):
 		
 		interactions_before = self.get_state_representation(state)
 		interactions_after = self.get_state_representation(next_state)
@@ -213,14 +234,13 @@ class SymbolicAgent:
 		Q_before = self.get_Q_total(interactions_before)
 		Q_after = self.get_Q_total(interactions_after)
 
-		td = reward + Q_after.max()  - Q_before[action]
+		td = reward + Q_after.max()- Q_before[action]
+
 
 		for ib in interactions_before:
 			# Interactions
 			Q_int = self.get_q_value_function(ib)
 			Q_int[action] = Q_int[action] + self.lr* td
-			
-		self.epsilon = max(0.1, self.epsilon*self.epsilon_decay)
 
 	def extract_entities(self, state: np.array, render_extracted = False):
 		"""
@@ -289,5 +309,8 @@ class SymbolicAgent:
 		pygame.display.quit()
 
 	def save(self, path):
-		pass
+
+		pickle.dump(self.interactions_Q_functions, open(path + '_Q_values', "wb+"))
+		pickle.dump(self.entity_types, open(path + '_Entity_types', "wb+"))
+		self.autoencoder.save_weights(path + '_nn_weights')
 

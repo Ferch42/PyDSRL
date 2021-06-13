@@ -215,16 +215,16 @@ class CrossCircleBase(gym.Env):
         info = {'entities': self.entities, 'agent': self.agent}
         #info = self.get_info()
         #return info
-        #return self.combined_state, reward, False, info
-        return info, reward, False, info
+        return self.combined_state, reward, False, info
+        #return info, reward, False, info
 
     def reset(self):
         '''Clear entities and state, call setup_field()'''
         self.entities = {'cross': [], 'circle': []}
         self.agent = None
         self.setup_field()
-        #return self.combined_state
-        return self.get_info()
+        return self.combined_state
+        #return self.get_info()
 
     def get_info(self):
 

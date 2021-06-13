@@ -44,7 +44,7 @@ from tensorflow.keras.losses import MeanSquaredError
 
 class DQNAgent:
     def __init__(self, state_dim, action_size, memory_size = 1_000, 
-        gamma = 0.99, init_epsilon = 1.0, final_epsilon = 0.1, epsilon_decay = 0.99998,
+        gamma = 0.99, init_epsilon = 1.0, final_epsilon = 0.1, epsilon_decay = 0.999995,
         lr = 0.00025, update_frequency = 4, batch_size = 32, C = 10_000):
         self.state_dim = state_dim
         self.action_size = action_size
@@ -161,7 +161,7 @@ class DQNAgent:
         self.model.load_weights(name)
 
     def save(self, name):
-        self.model.save_weights(name)
+        self.model.save_weights(name+ '.h5')
 
     def reset(self):
         pass

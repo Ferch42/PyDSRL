@@ -135,7 +135,7 @@ class SymbolicAgentv2:
 
 		return detected_entities
 
-	def build_state_representation(self, state, only_agent_interactions = True):
+	def build_state_representation(self, state, only_agent_interactions = False):
 		"""
 		Builds the state representation
 
@@ -169,9 +169,6 @@ class SymbolicAgentv2:
 					interactions.add(Interaction(se1.entity_type.type_number, \
 						se2.entity_type.type_number, x_dist, y_dist))
 		#print(interactions)
-		print('----------------------------------------------------------------')
-		print(len(interactions))
-		print(interactions)
 		return interactions
 
 	def reset(self):

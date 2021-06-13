@@ -2,8 +2,16 @@ import random
 from collections import namedtuple
 from collections import deque
 
+import pickle
 import pygame
 import numpy as np
+
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.layers import Input, Dense, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.models import Model
+from tensorflow.keras.losses import MeanSquaredError
 
 # namedtuple definitions
 EntityType = namedtuple('EntityType', ['activation_spectra', 'type_number'])
@@ -23,7 +31,7 @@ class SymbolicAgentDQN:
 		self.gamma = 0.99
 		self.lr = 0.001
 		self.epsilon = 1
-		self.epsilon_decay = 0.99999
+		self.epsilon_decay = 0.999995
 
 		# Auxiliary data structures
 		self.entity_types = [EntityType(None, 0), EntityType('agent', 1), \
@@ -38,6 +46,7 @@ class SymbolicAgentDQN:
 
 		self.experience_replay_buffer = deque(maxlen = 1_000)
 		self.batch_size = 32
+		self.max_number_of_interactions = 10
 
 
 	def act(self, state, random_act = True):
@@ -155,6 +164,10 @@ class SymbolicAgentDQN:
 				e1 = detected_entities[i]
 				e2 = detected_entities[j]
 
+				if not (e1.entity_type.type_number == 1 or e2.entity_type.type_number == 1):
+
+					continue
+
 				if euclidean(e1.position, e2.position) < self.interaction_max_distance:
 					# Valid interaction
 					# Sorting entities by their type in order to mantain consistency
@@ -166,9 +179,41 @@ class SymbolicAgentDQN:
 		#print(interactions)
 		return interactions
 
+	def create_vector_representation(self, interactions):
+
+		vector_representation = []
+
+		sorted_interactions = sorted(interactions, key = lambda x: abs(x.x_dist) + abs(x.y_dist))
+
+		count = 0
+
+		for si in sorted_interactions:
+
+			if si.entity_type2 == 2:
+				vector_representation += [1,0]
+			elif si.entity_type2 == 3:
+				vector_representation += [0,1]
+			else:
+				raise Exception("invalid format")
+
+			vector_representation += [si.x_dist, si.y_dist]
+			count+=1
+
+			if count == self.max_number_of_interactions:
+				break
+
+		if count!= self.max_number_of_interactions:
+
+			number_of_remaining_zeros = [0]* (self.max_number_of_interactions- count)
+			vector_representation += number_of_remaining_zeros
+
+		assert(len(vector_representation) == self.max_number_of_interactions*4)
+		
+		return np.array(vector_representation)
+
 	def reset(self):
 		pygame.display.quit()
 
 	def save(self, path):
-		pass
+		pickle.dump(self.interactions_Q_functions, open(path, "wb+") )
 
