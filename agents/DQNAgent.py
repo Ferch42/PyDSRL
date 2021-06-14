@@ -48,11 +48,14 @@ class DQNAgent:
         lr = 0.00025, update_frequency = 4, batch_size = 32, C = 10_000):
         self.state_dim = state_dim
         self.action_size = action_size
-        self.memory = deque(maxlen=memory_size)
+        
         self.gamma = gamma    # discount rate
         self.epsilon = init_epsilon  # exploration rate
         self.epsilon_min = final_epsilon
         self.epsilon_decay = epsilon_decay #0.99998
+
+        # DQN 
+        self.memory = deque(maxlen=memory_size)
         self.learning_rate = lr
         self.update_frequency = update_frequency
         self.model = self._build_model()

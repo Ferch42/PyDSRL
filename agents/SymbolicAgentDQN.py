@@ -1,6 +1,7 @@
 import random
 from collections import namedtuple
 from collections import deque
+import gc
 
 import pickle
 import pygame
@@ -8,7 +9,7 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.layers import Input, Dense, Conv2D, MaxPooling2D, Flatten
+from tensorflow.keras.layers import Input, Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.models import Model
 from tensorflow.keras.losses import MeanSquaredError
@@ -31,6 +32,7 @@ class SymbolicAgentDQN:
 		self.gamma = 0.99
 		self.lr = 0.001
 		self.epsilon = 1
+		self.epsilon_min = 0.1
 		self.epsilon_decay = 0.999995
 
 		# Auxiliary data structures
@@ -48,29 +50,47 @@ class SymbolicAgentDQN:
 		self.batch_size = 32
 		self.max_number_of_interactions = 10
 
+		# DQN 
+		self.memory = deque(maxlen=1_000)
+		self.update_frequency = 4
+		self.model = self._build_model()
+		self.target_model = self._build_model()
+		self.update_target_model()
+		self.step = 0
+		self.C = 10_000
+		self.batch_size = 32
+		self.loss_function = MeanSquaredError()
+		self.optimizer = Adam(learning_rate=0.00025, clipnorm=1.0)
 
-	def act(self, state, random_act = True):
+	def _build_model(self):
+		# Neural Net for Deep-Q learning Model
+		state_input = Input(shape = (self.max_number_of_interactions *4,))
+
+		dense1 = Dense(128, activation = 'relu')(state_input)
+		dense2 = Dense(128, activation = 'relu')(dense1)
+		dense3 = Dense(128, activation = 'relu')(dense2)
+
+		action_output = Dense(self.action_size, activation='linear')(dense3)
+
+		model = Model(inputs = state_input, outputs = action_output)
+
+		return model
 		
-		Q_values = self.get_Q_total(self.get_state_representation(state))
+	def update_target_model(self):
+		# copy weights from model to target_model
+		self.target_model.set_weights(self.model.get_weights())
 
-		#print(Q_values)
+	def act(self, state,random_act=True):
+
+		s = self.get_state_representation(state)
 		if random_act:
-			if np.random.random() < self.epsilon:
-				return np.random.choice(range(self.action_size))
-		
-		Q_max = Q_values.max()
-		Q_max_indexes = [j for j in range(self.action_size) if Q_values[j]==Q_max] 
-		
-		
-		return np.random.choice(Q_max_indexes)
+			if np.random.rand() <= self.epsilon:
+				return random.randrange(self.action_size)
 
-	def get_q_value_function(self, i: Interaction):
+		act_values = self.model.predict(np.array([s]))
 
-		if i not in self.interactions_Q_functions.keys():
+		return np.argmax(act_values[0])  # returns action
 
-			self.interactions_Q_functions[i] = np.zeros(self.action_size)
-
-		return self.interactions_Q_functions[i]
 
 	def get_state_representation(self, state):
 
@@ -82,42 +102,61 @@ class SymbolicAgentDQN:
 		return self.states_dict[state_string]
 	
 
-	def get_Q_total(self, interactions):
+	def replay(self, batch_size):
 
-		Q_values = np.zeros(self.action_size)
-		for i in interactions:
-			Q_values += self.get_q_value_function(i)
+		minibatch = random.sample(self.memory, batch_size)
 
-		return Q_values
+		states, rewards, next_states, actions, dones = [], [], [], [], []
+
+		for s, a, r, ns, d in minibatch:
+
+			states.append(s)
+			actions.append(a)
+			rewards.append(r)
+			next_states.append(ns)
+			dones.append(int(d))
+
+		states, next_states = np.array(states), np.array(next_states)
+		rewards = np.array(rewards)
+		dones = np.array(dones)
+		future_rewards = self.target_model.predict(next_states)
+
+		updated_q_values = rewards + (1-dones) * (self.gamma* np.max(future_rewards, axis = 1))
+
+		action_masks = tf.one_hot(actions, self.action_size)
+
+		with tf.GradientTape() as tape:
+			q_values = self.model(states)
+
+			q_action = tf.reduce_sum(tf.multiply(q_values, action_masks), axis=1)
+
+			loss = self.loss_function(updated_q_values, q_action)
+
+
+		grads = tape.gradient(loss, self.model.trainable_variables)
+		self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
+		gc.collect()
 
 	def update(self, state, action, reward, next_state, done):
 
-		self.experience_replay_buffer.append((state,action, reward, next_state, done))
 
-		if len(self.experience_replay_buffer)> self.batch_size:
-			batch = random.sample(self.experience_replay_buffer, self.batch_size)
+		self.remember(self.get_state_representation(state), action, reward, self.get_state_representation(next_state), done)
+		
+		if len(self.memory) > self.batch_size and self.step % self.update_frequency==0:
+			self.replay(self.batch_size)
+  
+		self.step +=1
 
-			for experience in batch:
-				self.remember(*experience)
+		if self.epsilon > self.epsilon_min:
+			self.epsilon *= self.epsilon_decay
 
-		self.epsilon = max(0.1, self.epsilon*self.epsilon_decay)
+		if self.step%self.C == 0:
+			self.update_target_model()
 
 
 	def remember(self, state, action, reward, next_state, done):
-		
-		interactions_before = self.get_state_representation(state)
-		interactions_after = self.get_state_representation(next_state)
-		
-		Q_before = self.get_Q_total(interactions_before)
-		Q_after = self.get_Q_total(interactions_after)
 
-		td = reward + Q_after.max()- Q_before[action]
-
-
-		for ib in interactions_before:
-			# Interactions
-			Q_int = self.get_q_value_function(ib)
-			Q_int[action] = Q_int[action] + self.lr* td
+		self.memory.append((state, action, reward, next_state, done))
 
 
 	def extract_entities(self, state):
@@ -177,7 +216,7 @@ class SymbolicAgentDQN:
 					interactions.add(Interaction(se1.entity_type.type_number, \
 						se2.entity_type.type_number, x_dist, y_dist))
 		#print(interactions)
-		return interactions
+		return self.create_vector_representation(interactions)
 
 	def create_vector_representation(self, interactions):
 
@@ -196,7 +235,7 @@ class SymbolicAgentDQN:
 			else:
 				raise Exception("invalid format")
 
-			vector_representation += [si.x_dist, si.y_dist]
+			vector_representation += [si.x_dist/self.interaction_max_distance, si.y_dist/self.interaction_max_distance]
 			count+=1
 
 			if count == self.max_number_of_interactions:
@@ -204,9 +243,10 @@ class SymbolicAgentDQN:
 
 		if count!= self.max_number_of_interactions:
 
-			number_of_remaining_zeros = [0]* (self.max_number_of_interactions- count)
+			number_of_remaining_zeros = [0]* (self.max_number_of_interactions- count) *4
 			vector_representation += number_of_remaining_zeros
 
+		#print(vector_representation)
 		assert(len(vector_representation) == self.max_number_of_interactions*4)
 		
 		return np.array(vector_representation)
@@ -215,5 +255,5 @@ class SymbolicAgentDQN:
 		pygame.display.quit()
 
 	def save(self, path):
-		pickle.dump(self.interactions_Q_functions, open(path, "wb+") )
+		self.model.save_weights(path+ '.h5')
 
