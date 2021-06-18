@@ -177,3 +177,7 @@ class SymbolicAgentv2:
 	def save(self, path):
 		pickle.dump(self.interactions_Q_functions, open(path, "wb+") )
 
+	def load(self, path):
+
+		self.interactions_Q_functions = pickle.load(open(path, 'rb'))
+

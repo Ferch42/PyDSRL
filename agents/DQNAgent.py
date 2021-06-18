@@ -161,7 +161,7 @@ class DQNAgent:
 
 
     def load(self, name):
-        self.model.load_weights(name)
+        self.model.load_weights(name + '.h5')
 
     def save(self, name):
         self.model.save_weights(name+ '.h5')

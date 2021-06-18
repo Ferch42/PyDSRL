@@ -233,3 +233,6 @@ class SymbolicAgentDQNv2:
 	def save(self, path):
 		self.model.save_weights(path+ '.h5')
 
+	def load(self, path):
+		self.model.load_weights(path + 'h5')
+

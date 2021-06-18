@@ -24,17 +24,25 @@ parser.add_argument('--experiment_name', type=str, default='default', help='Name
 parser.add_argument('--logdir',type=str,default='./logs', help='Log directory')
 parser.add_argument('--name',type=str,default='exp', help='name')
 
+parser.add_argument('--agent_load_path',type=str,default='', help='Path to the agent configuration')
+parser.add_argument('--rand',action='store_true', default=False)
+
 args = parser.parse_args()
 
 args.logdir = os.path.join(args.logdir,args.experiment_name,args.agent, args.name)
 
-env = gym.make("CrossCircle-MixedGrid-v0")
+
+if args.rand:
+	env = gym.make("CrossCircle-MixedGrid-v0")
+else:
+	env = gym.make("CrossCircle-MixedRand-v0")
 
 action_size = env.action_space.n
 
+evaluation_flag = args.experiment_name == 'eval'
 symbv2flag = args.agent =='symbv2' or 'symbdqn' in args.agent
 state_dim = None
-if False:
+if not symbv2flag:
 	state_dim = env.reset().shape
 
 
@@ -54,11 +62,15 @@ elif args.agent== 'symbexact':
 else:
 	raise Exception('agent type not found')
 
+if evaluation_flag:
+	agent.load(args.agent_load_path)
+	print('LOADED AGENT CONFIGURATION')
 
 number_of_evaluations = 0
 time_steps = 100
 buffered_rewards = deque(maxlen=200)
 summary_writer = tf.summary.create_file_writer(args.logdir)
+
 
 for e in tqdm.tqdm(range(args.episodes)):
 	#state_builder.restart()
@@ -67,15 +79,23 @@ for e in tqdm.tqdm(range(args.episodes)):
 	#state = state_builder.build_state(*autoencoder.get_entities(state))
 	total_reward = 0
 
+	captured_entities = {'positive': 0, 'negative': 0}
 	for t in range(time_steps):
 		
 		#env.render()
-		action = agent.act(state)
+		action = agent.act(state, random_act = (not evaluation_flag))
 		#print(action)
 		next_state, reward, done, _ = env.step(action)
-		total_reward += reward
+		if reward ==1:
+			captured_entities['positive'] +=1
+		elif reward== -1: 
+			captured_entities['negative'] += 1
 
-		agent.update(state, action, reward, next_state, done)
+		total_reward += reward
+		
+		if not evaluation_flag:
+			print('updating')
+			agent.update(state, action, reward, next_state, done)
 
 		state = next_state
 		if done:
@@ -84,9 +104,12 @@ for e in tqdm.tqdm(range(args.episodes)):
 	env.close()
 	buffered_rewards.append(total_reward)
 
+	captured_positive = (captured_entities['positive']+1)/(captured_entities['positive'] + captured_entities['negative']+ 1)
+	
 	with summary_writer.as_default():
 		tf.summary.scalar('Averaged Reward',np.mean(buffered_rewards),e)
 		tf.summary.scalar('Epsilon',agent.epsilon,e)
+		tf.summary.scalar('Captured Positive', captured_positive, e)
 
 	if e%args.evaluation_frequency ==0:
 		agent.save(os.path.join(args.logdir,'agent'))
