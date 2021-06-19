@@ -67,10 +67,8 @@ class SymbolicAgentDQN:
 		state_input = Input(shape = (self.max_number_of_interactions *4,))
 
 		dense1 = Dense(128, activation = 'relu')(state_input)
-		dense2 = Dense(128, activation = 'relu')(dense1)
-		dense3 = Dense(128, activation = 'relu')(dense2)
 
-		action_output = Dense(self.action_size, activation='linear')(dense3)
+		action_output = Dense(self.action_size, activation='linear')(dense1)
 
 		model = Model(inputs = state_input, outputs = action_output)
 

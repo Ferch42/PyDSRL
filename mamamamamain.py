@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description=None)
 # Experiment variables
 parser.add_argument('--episodes', '-e', type=int, default=10_000,
 					help='number of DQN training episodes')
-parser.add_argument('--evaluation_frequency', type=int, default=1_000,
+parser.add_argument('--evaluation_frequency', type=int, default=100,
 					help='How often to evaluate the agent')
 parser.add_argument('--agent', type = str, default = 'symbdqn', 
 					help='What agent do you want to evaluate (dqn or symb)')
@@ -32,9 +32,11 @@ args = parser.parse_args()
 args.logdir = os.path.join(args.logdir,args.experiment_name,args.agent, args.name)
 
 
-if args.rand:
+if not args.rand:
+	print("FIXED ENVIRONMENT")
 	env = gym.make("CrossCircle-MixedGrid-v0")
 else:
+	print('RANDOM ENVIRONMENT')
 	env = gym.make("CrossCircle-MixedRand-v0")
 
 action_size = env.action_space.n
@@ -94,7 +96,6 @@ for e in tqdm.tqdm(range(args.episodes)):
 		total_reward += reward
 		
 		if not evaluation_flag:
-			print('updating')
 			agent.update(state, action, reward, next_state, done)
 
 		state = next_state
