@@ -135,7 +135,7 @@ class SymbolicAgentv2:
 
 		return detected_entities
 
-	def build_state_representation(self, state, only_agent_interactions = False):
+	def build_state_representation(self, state, only_agent_interactions = True):
 		"""
 		Builds the state representation
 
