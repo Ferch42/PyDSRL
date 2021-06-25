@@ -105,7 +105,13 @@ for e in tqdm.tqdm(range(args.episodes)):
 	env.close()
 	buffered_rewards.append(total_reward)
 
-	captured_positive = (captured_entities['positive']+1)/(captured_entities['positive'] + captured_entities['negative']+ 1)
+	captured_positive = 0.5
+	
+	if captured_entities['positive'] + captured_entities['negative'] ==0:
+		captured_positive = 0.5
+
+	else:
+		captured_positive = captured_entities['positive']/(captured_entities['positive'] + captured_entities['negative'])
 	
 	with summary_writer.as_default():
 		tf.summary.scalar('Averaged Reward',np.mean(buffered_rewards),e)
